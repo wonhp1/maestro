@@ -34,7 +34,7 @@
 
 ## 기술 스택
 
-- **언어**: Swift 5.9+
+- **언어**: Swift 6.0+ (Strict Concurrency 활성)
 - **UI**: SwiftUI (macOS 14+ 전용)
 - **테스트**: XCTest
 - **빌드**: Swift Package Manager

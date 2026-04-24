@@ -8,7 +8,9 @@ let package = Package(
     name: "Maestro",
     defaultLocalization: "ko",
     platforms: [
-        .macOS(.v14)  // macOS 14 Sonoma 이상 (MaestroConfig.minimumMacOSVersion 과 일치)
+        // SEE ALSO: Sources/MaestroCore/MaestroConfig.swift#minimumMacOSVersion.
+        // AppLaunchTests.testMacOSVersionInvariantMatchesPackageDeclaration 가 드리프트 감지.
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "Maestro", targets: ["Maestro"]),
@@ -52,13 +54,7 @@ let package = Package(
                 .swiftLanguageMode(.v6),
             ]
         ),
-        .testTarget(
-            name: "MaestroAdaptersTests",
-            dependencies: ["MaestroAdapters"],
-            path: "Tests/MaestroAdaptersTests",
-            swiftSettings: [
-                .swiftLanguageMode(.v6),
-            ]
-        ),
+        // MaestroAdaptersTests — Phase 4에서 AgentAdapter 프로토콜 도입과 함께 추가.
+        // Phase 1 에선 테스트할 의미있는 동작이 없어 타겟 선언도 제거.
     ]
 )

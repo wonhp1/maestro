@@ -9,6 +9,13 @@ final class MainWindowTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(MaestroConfig.minimumWindowSize.height, 600)
     }
 
+    func testWindowSizesArePositive() {
+        XCTAssertGreaterThan(MaestroConfig.minimumWindowSize.width, 0)
+        XCTAssertGreaterThan(MaestroConfig.minimumWindowSize.height, 0)
+        XCTAssertGreaterThan(MaestroConfig.defaultWindowSize.width, 0)
+        XCTAssertGreaterThan(MaestroConfig.defaultWindowSize.height, 0)
+    }
+
     func testDefaultWindowSizeLargerThanMinimum() {
         XCTAssertGreaterThanOrEqual(
             MaestroConfig.defaultWindowSize.width,

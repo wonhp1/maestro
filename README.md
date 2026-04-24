@@ -29,7 +29,7 @@ Maestro는 그 위에 얹히는 **중립 지휘소**:
 
 ## 🏗️ 기술 스택
 
-- **SwiftUI + Swift 5.9+** (macOS 14+ 전용)
+- **SwiftUI + Swift 6.0+** (macOS 14+ 전용, Strict Concurrency)
 - **Swift Package Manager**
 - **XCTest** (TDD)
 - **SwiftTerm** (쉘 탭)

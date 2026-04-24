@@ -1,66 +1,99 @@
 import Foundation
 
-/// CLI 어댑터의 **정적 프로파일** — 감지 방법, 버전 파싱, 실행 템플릿.
+/// CLI 어댑터의 **정적 프로파일** — 감지 방법, 버전 파싱, 실행 argv 템플릿.
 ///
-/// - 사용자 머신에 어떤 CLI 가 설치되어 있는지 알려주고, 실행 시 인자를 어떻게
-///   조합할지 규정한다. Phase 4 에서 `AgentAdapter` 가 이 프로파일을 소비.
-/// - 프로파일 자체는 순수 데이터 — 런타임 상태를 갖지 않는다.
+/// ## 보안 핵심
+/// 실행 인자는 **문자열 템플릿이 아닌 argv 배열** (`[InvokeArg]`) 로 모델링.
+/// Shell 을 거치지 않고 `Process.arguments` 에 그대로 넘길 수 있어 **shell 인젝션
+/// 자체가 불가능**. `body`, `sessionId`, `folderPath` 같은 LLM/사용자 입력이
+/// 자유롭게 스페셜 문자를 포함해도 안전.
+///
+/// ## 구성
+/// - `adapterId`: 짧은 식별자 (`claude`, `aider`, ...).
+/// - `executable`: 실행 파일 이름 (`claude`). PATH 에서 찾음.
+/// - `detectArgs`: 설치 감지용 argv (예: `["--version"]`).
+/// - `versionRegex`: detect stdout 에서 버전 추출 패턴.
+/// - `invokeArgs`: 실행 argv 템플릿. `.literal` / `.placeholder` 혼용.
+///
+/// - Phase 4 에서 `AgentAdapter` 가 이 프로파일을 소비.
+/// - Phase 6 의 `ProcessRunner` 가 `Process.arguments = renderedArgv` 로 호출.
 public struct AgentProfile: Codable, Hashable, Sendable {
-    /// 짧은 식별자. Adapter 매칭 키. 예: `"claude"`, `"aider"`.
-    public let adapterId: String
-    /// UI 에 표시할 이름. 예: `"Claude Code"`.
+    public let adapterId: AdapterID
     public let displayName: String
-    /// 설치 여부 감지용 명령. 예: `"claude --version"`.
-    public let detectCommand: String
-    /// `detectCommand` 출력에서 버전을 추출할 정규식.
+    public let executable: String
+    public let detectArgs: [String]
     public let versionRegex: String
-    /// 실행 명령 템플릿. `{placeholder}` 구문으로 치환.
-    /// 예: `"claude -p {prompt} --resume {session}"`
-    public let invokeTemplate: String
+    public let invokeArgs: [InvokeArg]
 
     public init(
-        adapterId: String,
+        adapterId: AdapterID,
         displayName: String,
-        detectCommand: String,
+        executable: String,
+        detectArgs: [String],
         versionRegex: String,
-        invokeTemplate: String
+        invokeArgs: [InvokeArg]
     ) {
         self.adapterId = adapterId
         self.displayName = displayName
-        self.detectCommand = detectCommand
+        self.executable = executable
+        self.detectArgs = detectArgs
         self.versionRegex = versionRegex
-        self.invokeTemplate = invokeTemplate
+        self.invokeArgs = invokeArgs
     }
 }
 
-public extension AgentProfile {
-    /// 치환 키를 템플릿에 적용 (관대한 버전 — 누락된 키는 그대로 남김).
-    func renderInvokeCommand(substitutions: [String: String]) -> String {
-        var result = invokeTemplate
-        for (key, value) in substitutions {
-            result = result.replacingOccurrences(of: "{\(key)}", with: value)
-        }
-        return result
-    }
+/// argv 의 각 원소 — 리터럴 또는 플레이스홀더.
+public enum InvokeArg: Codable, Hashable, Sendable {
+    /// 그대로 전달되는 리터럴. 예: `"-p"`, `"--resume"`.
+    case literal(String)
+    /// 런타임 치환될 플레이스홀더. 이름으로 참조. 예: `.placeholder("prompt")`.
+    case placeholder(String)
+}
 
-    /// 치환 키를 엄격하게 적용 (누락 시 throws). 실행 직전 호출에 사용.
-    func strictInvokeCommand(substitutions: [String: String]) throws -> String {
-        let rendered = renderInvokeCommand(substitutions: substitutions)
-        if let name = AgentProfile.firstPlaceholder(in: rendered) {
-            throw AgentProfileError.unresolvedPlaceholder(name: name)
+public extension AgentProfile {
+    /// 플레이스홀더를 실제 값으로 치환하여 `[String]` argv 생성.
+    /// 누락된 키가 있으면 throws — `Process.arguments` 전달 직전 반드시 성공해야 함.
+    func renderArgv(substitutions: [String: String]) throws -> [String] {
+        var rendered: [String] = []
+        for arg in invokeArgs {
+            switch arg {
+            case .literal(let value):
+                rendered.append(value)
+            case .placeholder(let name):
+                guard let value = substitutions[name] else {
+                    throw AgentProfileError.unresolvedPlaceholder(name: name)
+                }
+                rendered.append(value)
+            }
         }
         return rendered
     }
 
-    private static func firstPlaceholder(in text: String) -> String? {
-        guard
-            let openIndex = text.firstIndex(of: "{"),
-            let closeIndex = text[openIndex...].firstIndex(of: "}")
-        else {
-            return nil
+    /// 사람이 읽기 위한 **디스플레이 전용** 렌더. Process 에 절대 전달하지 말 것.
+    /// 인자는 공백으로 join 되며 이스케이프 없음 — 로그/UI 미리보기에만 사용.
+    func displayCommand(substitutions: [String: String] = [:]) -> String {
+        let parts: [String] = invokeArgs.map { arg in
+            switch arg {
+            case .literal(let value):
+                return value
+            case .placeholder(let name):
+                return substitutions[name] ?? "{\(name)}"
+            }
         }
-        let range = text.index(after: openIndex)..<closeIndex
-        return String(text[range])
+        return ([executable] + parts).joined(separator: " ")
+    }
+
+    /// 플레이스홀더 이름 목록 (중복 제거, 순서 유지).
+    var placeholderNames: [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for arg in invokeArgs {
+            if case .placeholder(let name) = arg, !seen.contains(name) {
+                seen.insert(name)
+                ordered.append(name)
+            }
+        }
+        return ordered
     }
 }
 

@@ -1,48 +1,101 @@
 @testable import MaestroCore
 import XCTest
 
-/// Phase 2 / Test 2.3 — AgentProfile 은 CLI 어댑터의 "감지/실행/버전 확인" 프로파일.
+/// Phase 2 / Test 2.3 — AgentProfile 의 argv 기반 실행 모델.
 ///
-/// 실제 어댑터 구현(P4+)의 파라미터화된 구성 요소. 프로파일 자체는 순수 데이터.
+/// 핵심 계약: `invokeArgs: [InvokeArg]` 는 shell 을 거치지 않고 `Process.arguments`
+/// 에 직접 전달되므로 **임의 문자열이 인자에 들어가도 인젝션 불가**.
 final class AgentProfileTests: XCTestCase {
     private func claudeProfile() -> AgentProfile {
         AgentProfile(
-            adapterId: "claude",
+            adapterId: AdapterID(rawValue: "claude"),
             displayName: "Claude Code",
-            detectCommand: "claude --version",
+            executable: "claude",
+            detectArgs: ["--version"],
             versionRegex: #"^(\d+\.\d+\.\d+)"#,
-            invokeTemplate: "claude -p {prompt} --resume {session}"
+            invokeArgs: [
+                .literal("-p"),
+                .placeholder("prompt"),
+                .literal("--resume"),
+                .placeholder("session"),
+                .literal("--output-format"),
+                .literal("json"),
+            ]
         )
     }
 
     func testInitPopulatesFields() {
         let p = claudeProfile()
-        XCTAssertEqual(p.adapterId, "claude")
+        XCTAssertEqual(p.adapterId.rawValue, "claude")
         XCTAssertEqual(p.displayName, "Claude Code")
-        XCTAssertTrue(p.detectCommand.contains("--version"))
-        XCTAssertTrue(p.invokeTemplate.contains("{prompt}"))
+        XCTAssertEqual(p.executable, "claude")
+        XCTAssertEqual(p.detectArgs, ["--version"])
     }
 
-    func testEqualityBasedOnAdapterId() {
-        let claudeA = claudeProfile()
-        let claudeB = AgentProfile(
-            adapterId: "claude",
-            displayName: "Claude Code (변경된 표시)",
-            detectCommand: "claude --version",
-            versionRegex: #"^(\d+\.\d+\.\d+)"#,
-            invokeTemplate: "claude -p {prompt} --resume {session}"
-        )
-        // 동일 adapterId 는 같은 프로파일로 간주하지 않음 — struct 전체 동등성.
-        XCTAssertNotEqual(claudeA, claudeB)
-    }
-
-    func testHashable() {
+    func testPlaceholderNamesOrderedAndDeduped() {
         let p = claudeProfile()
-        var set: Set<AgentProfile> = []
-        set.insert(p)
-        set.insert(p)
-        XCTAssertEqual(set.count, 1)
+        XCTAssertEqual(p.placeholderNames, ["prompt", "session"])
+
+        // 중복/역순 케이스
+        let weird = AgentProfile(
+            adapterId: AdapterID(rawValue: "x"),
+            displayName: "x",
+            executable: "x",
+            detectArgs: [],
+            versionRegex: "",
+            invokeArgs: [.placeholder("b"), .placeholder("a"), .placeholder("b")]
+        )
+        XCTAssertEqual(weird.placeholderNames, ["b", "a"])
     }
+
+    func testRenderArgvSubstitutesAndPreservesOrder() throws {
+        let p = claudeProfile()
+        let argv = try p.renderArgv(substitutions: [
+            "prompt": "안녕 🎼",
+            "session": "abc-123",
+        ])
+        XCTAssertEqual(argv, [
+            "-p", "안녕 🎼",
+            "--resume", "abc-123",
+            "--output-format", "json",
+        ])
+    }
+
+    func testRenderArgvDoesNotShellEscapeDangerousInput() throws {
+        // 핵심 보안 속성: 인자 내용은 그대로 argv 에 전달. Process 가 shell 파싱 안 함.
+        let p = claudeProfile()
+        let argv = try p.renderArgv(substitutions: [
+            "prompt": "; rm -rf / #",
+            "session": "$(whoami)",
+        ])
+        // 원본 문자열이 그대로 포함 — shell 이 해석하지 않으므로 안전.
+        XCTAssertTrue(argv.contains("; rm -rf / #"))
+        XCTAssertTrue(argv.contains("$(whoami)"))
+    }
+
+    func testRenderArgvThrowsForMissingPlaceholder() {
+        let p = claudeProfile()
+        XCTAssertThrowsError(try p.renderArgv(substitutions: ["prompt": "x"])) { err in
+            XCTAssertEqual(err as? AgentProfileError, .unresolvedPlaceholder(name: "session"))
+        }
+    }
+
+    func testDisplayCommandIncludesExecutableAndPlaceholderHints() {
+        let p = claudeProfile()
+        let cmd = p.displayCommand()
+        XCTAssertTrue(cmd.hasPrefix("claude "))
+        XCTAssertTrue(cmd.contains("{prompt}"))
+        XCTAssertTrue(cmd.contains("{session}"))
+    }
+
+    func testDisplayCommandWithPartialSubstitutions() {
+        let p = claudeProfile()
+        let cmd = p.displayCommand(substitutions: ["prompt": "hi"])
+        XCTAssertTrue(cmd.contains(" hi "))
+        XCTAssertTrue(cmd.contains("{session}"))
+    }
+
+    // MARK: Codable
 
     func testCodableRoundtrip() throws {
         let original = claudeProfile()
@@ -51,22 +104,27 @@ final class AgentProfileTests: XCTestCase {
         XCTAssertEqual(decoded, original)
     }
 
-    func testInvokeTemplateSubstitution() {
-        let p = claudeProfile()
-        let cmd = p.renderInvokeCommand(substitutions: [
-            "prompt": "안녕",
-            "session": "abc-123",
-        ])
-        XCTAssertEqual(cmd, "claude -p 안녕 --resume abc-123")
+    func testInvokeArgCodable() throws {
+        let values: [InvokeArg] = [.literal("-p"), .placeholder("prompt")]
+        let data = try JSONEncoder.maestro.encode(values)
+        let decoded = try JSONDecoder.maestro.decode([InvokeArg].self, from: data)
+        XCTAssertEqual(decoded, values)
     }
 
-    func testInvokeTemplateFailsOnMissingSubstitution() {
-        let p = claudeProfile()
-        XCTAssertThrowsError(try p.strictInvokeCommand(substitutions: ["prompt": "x"])) { err in
-            guard case AgentProfileError.unresolvedPlaceholder(let name) = err else {
-                return XCTFail("예상과 다른 에러: \(err)")
-            }
-            XCTAssertEqual(name, "session")
-        }
+    // MARK: Equality — 전체 필드 비교 (이름과 내용이 일치하도록 변경)
+
+    func testEqualityRequiresAllFieldsMatch() {
+        let a = claudeProfile()
+        var invokeArgs = a.invokeArgs
+        invokeArgs.append(.literal("--extra"))
+        let b = AgentProfile(
+            adapterId: a.adapterId,
+            displayName: a.displayName,
+            executable: a.executable,
+            detectArgs: a.detectArgs,
+            versionRegex: a.versionRegex,
+            invokeArgs: invokeArgs
+        )
+        XCTAssertNotEqual(a, b)
     }
 }

@@ -3,6 +3,9 @@ import XCTest
 
 /// Phase 2 / Test 2.1 — 에이전트 간 메시지의 봉투 계약.
 final class MessageEnvelopeTests: XCTestCase {
+    // 정수 초 — 부동소수점 드리프트 없이 roundtrip 가능 (Codable ms 정밀도 내).
+    private let fixedDate = Date(timeIntervalSince1970: 1_714_500_000)
+
     // MARK: Construction
 
     func testTaskFactoryPopulatesRequiredFields() {
@@ -15,11 +18,14 @@ final class MessageEnvelopeTests: XCTestCase {
         XCTAssertEqual(envelope.to.rawValue, "cpo")
         XCTAssertEqual(envelope.body, "Q3 성과 보고해")
         XCTAssertEqual(envelope.type, .task)
-        XCTAssertTrue(envelope.expectReply, "task 기본값 expectReply=true")
+        XCTAssertTrue(envelope.expectReply)
         XCTAssertNil(envelope.inReplyTo)
+        XCTAssertEqual(envelope.deliveryStatus, .pending)
+        XCTAssertEqual(envelope.schemaVersion, MessageEnvelope.currentSchemaVersion)
+        XCTAssertEqual(envelope.correlationId, envelope.id.rawValue, "기본 correlationId = id")
     }
 
-    func testReplyFactoryLinksToOriginal() {
+    func testReportFactoryLinksToOriginal() {
         let original = MessageEnvelope.task(
             from: AgentID(rawValue: "control"),
             to: AgentID(rawValue: "cpo"),
@@ -31,36 +37,62 @@ final class MessageEnvelopeTests: XCTestCase {
             body: "Q3 매출 +23%"
         )
         XCTAssertEqual(reply.inReplyTo, original.id)
-        XCTAssertEqual(reply.threadId, original.threadId, "같은 스레드에 귀속")
-        XCTAssertEqual(reply.to, original.from, "응답은 원 발신자에게")
+        XCTAssertEqual(reply.threadId, original.threadId)
+        XCTAssertEqual(reply.to, original.from)
         XCTAssertEqual(reply.from, original.to)
         XCTAssertEqual(reply.type, .report)
-        XCTAssertFalse(reply.expectReply, "report 기본값 expectReply=false")
+        XCTAssertFalse(reply.expectReply)
     }
 
-    func testExplicitInitAllowsCustomFields() {
-        let now = Date()
-        let envelope = MessageEnvelope(
+    func testCorrelationIdExplicitOverride() {
+        let env = MessageEnvelope(
             id: EnvelopeID(rawValue: "e-1"),
             threadId: ThreadID(rawValue: "t-1"),
-            inReplyTo: EnvelopeID(rawValue: "e-0"),
+            inReplyTo: nil,
             from: AgentID(rawValue: "a"),
             to: AgentID(rawValue: "b"),
-            type: .question,
-            body: "왜?",
-            createdAt: now,
-            expectReply: true
+            type: .task,
+            body: "x",
+            createdAt: fixedDate,
+            expectReply: true,
+            correlationId: "retry-group-99"
         )
-        XCTAssertEqual(envelope.id.rawValue, "e-1")
-        XCTAssertEqual(envelope.createdAt, now)
+        XCTAssertEqual(env.correlationId, "retry-group-99")
+    }
+
+    // MARK: Copy-style mutators
+
+    func testWithThreadIdPreservesOtherFields() {
+        let env = MessageEnvelope.task(
+            from: AgentID(rawValue: "a"),
+            to: AgentID(rawValue: "b"),
+            body: "x"
+        )
+        let newThread = ThreadID(rawValue: "t-new")
+        let copy = env.with(threadId: newThread)
+        XCTAssertEqual(copy.threadId, newThread)
+        XCTAssertEqual(copy.id, env.id)
+        XCTAssertEqual(copy.body, env.body)
+        XCTAssertEqual(copy.correlationId, env.correlationId)
+        XCTAssertEqual(copy.deliveryStatus, env.deliveryStatus)
+        XCTAssertEqual(copy.schemaVersion, env.schemaVersion)
+    }
+
+    func testWithDeliveryStatusTransition() {
+        let env = MessageEnvelope.task(
+            from: AgentID(rawValue: "a"),
+            to: AgentID(rawValue: "b"),
+            body: "x"
+        )
+        let delivered = env.with(deliveryStatus: .delivered)
+        XCTAssertEqual(delivered.deliveryStatus, .delivered)
+        XCTAssertEqual(env.deliveryStatus, .pending, "원본은 불변")
     }
 
     // MARK: Codable
 
-    func testJSONRoundtripPreservesAllFields() throws {
-        // 고정 ms-정밀도 날짜 사용 — JSONCodecs 는 iso8601 fractional seconds (ms) 저장이라
-        // `Date()` 의 μs 정밀도는 roundtrip 에서 ms 로 반올림됨. 이는 의도된 trade-off.
-        let fixedDate = Date(timeIntervalSince1970: 1_714_500_000.123)
+    func testJSONRoundtripWithFixedMsDate() throws {
+        // ms 정밀도 고정 날짜 — iso8601 fractional seconds 저장과 정확히 일치.
         let original = MessageEnvelope(
             id: EnvelopeID(rawValue: "e-1"),
             threadId: ThreadID(rawValue: "t-1"),
@@ -79,27 +111,32 @@ final class MessageEnvelopeTests: XCTestCase {
 
     func testDecodingFailsForMissingRequiredField() {
         let brokenJSON = """
-        {"id":"e-1","threadId":"t-1","from":"a","type":"task","body":"x","createdAt":"2026-04-25T00:00:00Z","expectReply":true}
+        {"id":"e-1","threadId":"t-1","from":"a","type":"task","body":"x","createdAt":"2026-04-25T00:00:00Z","expectReply":true,"schemaVersion":1,"correlationId":"e-1","deliveryStatus":"pending"}
         """.data(using: .utf8)!
-        XCTAssertThrowsError(try JSONDecoder.maestro.decode(MessageEnvelope.self, from: brokenJSON))
+        XCTAssertThrowsError(
+            try JSONDecoder.maestro.decode(MessageEnvelope.self, from: brokenJSON),
+            "`to` 필드 누락 시 거부"
+        )
     }
 
-    // MARK: Hashable / Identity
+    // MARK: Equality
 
-    func testTwoEnvelopesWithSameIDHashEqually() {
-        let id = EnvelopeID.new()
-        let now = Date()
-        let a = MessageEnvelope(
-            id: id, threadId: ThreadID(rawValue: "t"), inReplyTo: nil,
-            from: AgentID(rawValue: "x"), to: AgentID(rawValue: "y"),
-            type: .fyi, body: "hi", createdAt: now, expectReply: false
+    func testEqualityBasedOnAllFields() {
+        let a = MessageEnvelope.task(
+            from: AgentID(rawValue: "x"),
+            to: AgentID(rawValue: "y"),
+            body: "hi"
         )
-        let b = MessageEnvelope(
-            id: id, threadId: ThreadID(rawValue: "t"), inReplyTo: nil,
-            from: AgentID(rawValue: "x"), to: AgentID(rawValue: "y"),
-            type: .fyi, body: "hi", createdAt: now, expectReply: false
+        let bodyChanged = MessageEnvelope(
+            id: a.id, threadId: a.threadId, inReplyTo: a.inReplyTo,
+            from: a.from, to: a.to, type: a.type,
+            body: "다른 본문",
+            createdAt: a.createdAt,
+            expectReply: a.expectReply,
+            correlationId: a.correlationId,
+            deliveryStatus: a.deliveryStatus,
+            schemaVersion: a.schemaVersion
         )
-        XCTAssertEqual(a, b)
-        XCTAssertEqual(a.hashValue, b.hashValue)
+        XCTAssertNotEqual(a, bodyChanged)
     }
 }

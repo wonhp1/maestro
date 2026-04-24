@@ -4,6 +4,7 @@ import Foundation
 ///
 /// - ID 는 `ThreadID` — 토론도 결국 스레드다. 단, 참여자/규칙/상태머신이 추가.
 /// - `moderatorId` 는 발언자 순서를 결정하는 에이전트 (없으면 단순 라운드 로빈).
+/// - Phase 14 `DiscussionEngine` 이 이 타입을 소비, Phase 15 UI 가 렌더링.
 public struct Discussion: Codable, Hashable, Sendable, Identifiable {
     public let id: ThreadID
     public let title: String
@@ -41,8 +42,25 @@ public extension Discussion {
         state = target
     }
 
-    /// 턴 기록. 상태가 `.active` 여야 하고, 발언자가 참가자 목록에 있어야 하고,
-    /// `turnIndex` 는 단조 증가. `maxTurns` 도달 시 자동으로 `.completed` 로 전이.
+    /// 봉투로부터 턴 기록. 봉투의 `threadId` 가 이 토론의 ID 와 일치해야 하며,
+    /// 발신자가 참가자 목록에 있어야 한다. `maxTurns` 도달 시 `.completed` 자동 전이.
+    mutating func recordTurn(from envelope: MessageEnvelope) throws {
+        guard envelope.threadId == id else {
+            throw DiscussionError.foreignEnvelope(expected: id, found: envelope.threadId)
+        }
+        try recordTurn(
+            speaker: envelope.from,
+            envelopeId: envelope.id,
+            at: envelope.createdAt
+        )
+    }
+
+    /// 저수준 턴 기록. 일반적으론 `recordTurn(from:)` 을 사용.
+    ///
+    /// - `state` 가 `.active` 가 아니면 throws.
+    /// - `speaker` 가 `participants` 에 없으면 throws.
+    /// - `turnIndex` 는 단조 증가.
+    /// - `turns.count >= maxTurns` 도달 시 `.completed` 로 전이.
     mutating func recordTurn(
         speaker: AgentID,
         envelopeId: EnvelopeID,
@@ -69,6 +87,16 @@ public extension Discussion {
 }
 
 /// 토론의 수명 상태.
+///
+/// 전이 매트릭스:
+/// ```
+///             →pending  →active  →paused  →completed  →aborted
+/// pending        ✗          ✓        ✗        ✗          ✓
+/// active         ✗          ✗        ✓        ✓          ✓
+/// paused         ✗          ✓        ✗        ✓          ✓
+/// completed      ✗          ✗        ✗        ✗          ✗  (terminal)
+/// aborted        ✗          ✗        ✗        ✗          ✗  (terminal)
+/// ```
 public enum DiscussionState: String, Codable, Hashable, Sendable, CaseIterable {
     /// 생성되었으나 아직 시작 전.
     case pending
@@ -118,4 +146,5 @@ public enum DiscussionError: Error, Equatable {
     case invalidTransition(from: DiscussionState, to: DiscussionState)
     case notActive(currentState: DiscussionState)
     case notAParticipant(speaker: AgentID)
+    case foreignEnvelope(expected: ThreadID, found: ThreadID)
 }

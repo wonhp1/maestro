@@ -1,5 +1,5 @@
-import XCTest
 @testable import MaestroCore
+import XCTest
 
 /// Phase 1 / Test 1.2 — 메인 윈도우의 최소 크기와 기본 크기 계약 검증.
 final class MainWindowTests: XCTestCase {

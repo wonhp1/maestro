@@ -1,5 +1,5 @@
-import SwiftUI
 import MaestroCore
+import SwiftUI
 
 /// Phase 1 플레이스홀더. 후속 Phase에서 컨트롤 타워 레이아웃(P12)으로 대체된다.
 struct ContentView: View {

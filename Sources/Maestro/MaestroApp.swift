@@ -1,5 +1,5 @@
-import SwiftUI
 import MaestroCore
+import SwiftUI
 
 /// Maestro 앱의 진입점.
 ///

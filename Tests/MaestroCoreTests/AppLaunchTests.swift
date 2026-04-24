@@ -1,5 +1,5 @@
-import XCTest
 @testable import MaestroCore
+import XCTest
 
 /// Phase 1 / Test 1.1 — 앱 시작 시 필요한 핵심 상수와 메타데이터가 정의되어 있는지 확인한다.
 ///

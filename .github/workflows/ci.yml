@@ -16,18 +16,18 @@ concurrency:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: macos-14
+    # macos-15 이상 — Swift 6 toolchain 필요 (Xcode 16+ 기본 탑재)
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        # Xcode 15 이상 (Swift 6 지원)
+      - name: Select latest Xcode (Swift 6+)
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || \
-          sudo xcode-select -s /Applications/Xcode_15.3.app/Contents/Developer || \
-          true
+          # macos-15 runner 에 설치된 가장 최신 Xcode 선택
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)/Contents/Developer" || \
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
           swift --version
 
@@ -65,7 +65,7 @@ jobs:
 
   lint:
     name: SwiftLint
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 5
     steps:
       - name: Checkout

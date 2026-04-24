@@ -34,7 +34,7 @@ public struct Identifier<Tag>: Hashable, Sendable, CustomStringConvertible {
         return Self(rawValue: rawValue)
     }
 
-    fileprivate static func ensureValid(_ value: String) throws {
+    private static func ensureValid(_ value: String) throws {
         guard !value.isEmpty else {
             throw IdentifierError.emptyRawValue
         }

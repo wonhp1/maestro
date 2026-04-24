@@ -100,11 +100,22 @@ public struct AppSupportPaths: Sendable {
     // MARK: Directory creation
 
     /// 모든 디렉토리를 (존재하지 않으면) 생성. 첫 실행 시 호출.
+    ///
+    /// 모든 디렉토리는 `0700` 권한 (소유자만 접근) 으로 설정 — 로컬 다중 사용자
+    /// 환경에서 다른 사용자의 spy 방어.
     public func ensureAllDirectoriesExist(
         fileManager: FileManager = .default
     ) throws {
-        for dir in [sessionsDir, agentsDir, inboxRoot, outboxRoot, threadsDir, failedDir, logsDir] {
+        let allDirs = [
+            root, sessionsDir, agentsDir, inboxRoot, outboxRoot,
+            threadsDir, failedDir, logsDir,
+        ]
+        for dir in allDirs {
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o700))],
+                ofItemAtPath: dir.path
+            )
         }
     }
 }

@@ -6,6 +6,8 @@ import Foundation
 public enum PersistenceError: Error, Equatable, Sendable {
     /// 파일 자체가 없어 읽을 수 없음.
     case fileNotFound(URL)
+    /// 파일 읽기 실패 (open/read/seek 등).
+    case readFailed(path: URL, underlying: String)
     /// JSON 디코딩 실패. 파일 손상 / 스키마 불일치 가능.
     case decodingFailed(path: URL, underlying: String)
     /// JSON 인코딩 실패. 매우 드물지만 Codable 순환 참조 등.
@@ -20,4 +22,6 @@ public enum PersistenceError: Error, Equatable, Sendable {
     case invalidPath(URL)
     /// 파일 감시(DispatchSource) 시작 실패.
     case watcherStartFailed(URL)
+    /// 파일/버퍼 크기가 허용 한계를 초과 (OOM / DoS 방어).
+    case resourceLimitExceeded(path: URL, limit: Int, actual: Int)
 }

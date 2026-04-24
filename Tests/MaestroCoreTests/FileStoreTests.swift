@@ -108,4 +108,38 @@ final class FileStoreTests: XCTestCase {
             XCTFail("PersistenceError 로 래핑되어야: \(error)")
         }
     }
+
+    func testResourceLimitRejectsOversizedFile() async throws {
+        let path = tempDir.appending(path: "huge.json")
+        // 100 KiB 파일을 1 KiB 한계로 시도.
+        let data = Data(repeating: 0x7B, count: 100 * 1024)
+        try data.write(to: path)
+        let store = FileStore<TestValue>(path: path, maxFileSize: 1024)
+        do {
+            _ = try await store.load()
+            XCTFail("크기 초과는 resourceLimitExceeded 로 거부되어야")
+        } catch let error as PersistenceError {
+            if case .resourceLimitExceeded = error { /* pass */ } else {
+                XCTFail("예상과 다른 에러: \(error)")
+            }
+        }
+    }
+
+    func testSavedFilePermissionsAre0600() async throws {
+        let path = tempDir.appending(path: "secret.json")
+        let store = FileStore<TestValue>(path: path)
+        try await store.save(TestValue(name: "api-key", count: 1))
+        let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue
+        XCTAssertEqual(perms, 0o600, "다른 로컬 사용자의 읽기를 차단")
+    }
+
+    func testLoadAfterSaveReflectsSavedValue() async throws {
+        let path = tempDir.appending(path: "v.json")
+        let store = FileStore<TestValue>(path: path)
+        let value = TestValue(name: "cpo", count: 42)
+        try await store.save(value)
+        let loaded = try await store.loadIfExists()
+        XCTAssertEqual(loaded, value, "save/load 왕복은 값 보존")
+    }
 }

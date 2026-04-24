@@ -6,9 +6,11 @@ import Security
 /// API 키, OAuth 토큰 등 민감한 문자열 전용. 평문 파일 저장 절대 금지 — 모든
 /// 시크릿은 이 타입을 통해 `kSecClassGenericPassword` 항목으로 저장.
 ///
-/// ## 접근성
-/// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` — 기기 잠금 해제 시에만 접근,
-/// iCloud 동기화 안 함 (로컬 완결 원칙).
+/// ## 접근성 및 동기화
+/// - `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` — 기기 잠금 해제 시에만 접근.
+/// - `kSecAttrSynchronizable = false` — iCloud Keychain 동기화 명시적 비활성
+///   (로컬 완결 원칙).
+/// - 두 속성 모두 update 경로에서도 보존 — legacy 루즈 항목 재기록 시 strict 복구.
 ///
 /// ## 동시성
 /// `struct` + 내부 상태 없음 — 자유롭게 여러 스레드에서 사용 가능.
@@ -24,25 +26,16 @@ public struct KeychainStore: Sendable {
 
     public func set(_ key: String, value: String) throws {
         let data = Data(value.utf8)
-        let accountQuery = baseQuery(account: key)
 
-        // 먼저 업데이트 시도 (동일 account 가 이미 있으면 값만 교체)
-        let updateAttrs: [String: Any] = [kSecValueData as String: data]
-        let updateStatus = SecItemUpdate(
-            accountQuery as CFDictionary,
-            updateAttrs as CFDictionary
-        )
-        if updateStatus == errSecSuccess { return }
-        if updateStatus != errSecItemNotFound {
-            throw PersistenceError.keychainFailed(status: updateStatus)
+        // 먼저 기존 항목 삭제 후 다시 추가 — 이전 루즈 설정 (accessibility / sync) 이
+        // 잔존하지 않도록. update-only 는 legacy 속성을 덮어쓰지 못함.
+        let baseDeleteQuery = baseQuery(account: key)
+        let deleteStatus = SecItemDelete(baseDeleteQuery as CFDictionary)
+        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+            throw PersistenceError.keychainFailed(status: deleteStatus)
         }
 
-        // 없으면 새로 추가. `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` 로 iCloud 비동기화.
-        //
-        // Note: `kSecUseDataProtectionKeychain` 은 Xcode 앱 번들에서만 기본 활성.
-        // CLI/SPM executable 은 entitlement 없이 전통 keychain 만 사용 가능 (Phase 21
-        // Xcode 프로젝트 래핑 시 data-protection keychain 으로 업그레이드 가능).
-        var addQuery = accountQuery
+        var addQuery = baseDeleteQuery
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
 
@@ -84,8 +77,9 @@ public struct KeychainStore: Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
+            kSecAttrSynchronizable as String: false,
         ]
-        // 안전장치: 무한 루프 방지 상한 (실제 보관 항목 수 < 1000 이 정상 시나리오)
+        // 상한: 루프가 무한 반복하는 상황은 버그 — 보관 항목 수의 상한으로 방어.
         for _ in 0..<10_000 {
             let status = SecItemDelete(query as CFDictionary)
             if status == errSecItemNotFound { return }
@@ -102,6 +96,8 @@ public struct KeychainStore: Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            // iCloud 동기화 명시적 차단 — 쿼리/삭제에서 동기화 항목과 섞이지 않게.
+            kSecAttrSynchronizable as String: false,
         ]
     }
 }

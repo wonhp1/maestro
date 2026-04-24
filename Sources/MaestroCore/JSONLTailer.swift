@@ -7,11 +7,32 @@ import Foundation
 /// - `DispatchSource.makeFileSystemObjectSource` 로 write 감지.
 /// - 시작 offset 지정 가능 (기본: 파일 끝 = 기존 히스토리 건너뜀).
 /// - Phase 11 `InboxWatcher` 의 기반.
+///
+/// ## 방어 한계
+/// - `maxPartialLineBytes` 초과 시 `resourceLimitExceeded` — 무한 growing 라인 OOM 방어.
+/// - `chunkSize` 단위로 분할 읽기 — 한 번에 100MB delta 를 메모리에 담지 않음.
+/// - Truncation 감지: 현재 파일 크기가 `offset` 보다 작으면 `offset = 0`, partial 비움.
+/// - 디코드 실패 시 source 취소 + stream finish.
+///
+/// ## 주의: DispatchSource 이벤트 coalescing
+/// `source.data` 는 여러 write 를 한 이벤트로 합침. 이 타입은 offset 기반 재드레인
+/// 으로 이 문제 없음. 단, `FileWatcher` 이벤트 소비자는 1:1 매핑 가정 금지.
 public actor JSONLTailer<T: Codable & Sendable> {
-    public let path: URL
+    public static var defaultMaxPartialLineBytes: Int { 16 * 1024 * 1024 }  // 16 MiB
+    public static var defaultChunkSize: Int { 64 * 1024 }                     // 64 KiB
 
-    public init(path: URL) {
+    public let path: URL
+    public let maxPartialLineBytes: Int
+    public let chunkSize: Int
+
+    public init(
+        path: URL,
+        maxPartialLineBytes: Int = JSONLTailer.defaultMaxPartialLineBytes,
+        chunkSize: Int = JSONLTailer.defaultChunkSize
+    ) {
         self.path = path
+        self.maxPartialLineBytes = maxPartialLineBytes
+        self.chunkSize = chunkSize
     }
 
     /// 현재 offset 이후 새로 append 되는 이벤트를 발행.
@@ -22,6 +43,8 @@ public actor JSONLTailer<T: Codable & Sendable> {
         fromByteOffset startOffset: UInt64? = nil
     ) -> AsyncThrowingStream<T, Error> {
         let path = self.path
+        let maxPartial = self.maxPartialLineBytes
+        let chunkSize = self.chunkSize
         return AsyncThrowingStream { continuation in
             let fileManager = FileManager.default
 
@@ -30,7 +53,7 @@ public actor JSONLTailer<T: Codable & Sendable> {
                 fileManager.createFile(atPath: path.path, contents: nil)
             }
 
-            let fd = open(path.path, O_EVTONLY)
+            let fd = open(path.path, O_EVTONLY | O_CLOEXEC)
             guard fd != -1 else {
                 continuation.finish(throwing: PersistenceError.watcherStartFailed(path))
                 return
@@ -43,17 +66,23 @@ public actor JSONLTailer<T: Codable & Sendable> {
                 queue: queue
             )
 
-            // 상태 (actor-style self-contained)
             let state = TailState<T>(
                 path: path,
-                offset: startOffset ?? ((try? currentSize(of: path)) ?? 0)
+                offset: startOffset ?? ((try? currentSize(of: path)) ?? 0),
+                maxPartialBytes: maxPartial,
+                chunkSize: chunkSize
             )
+
+            let cancelOnError: @Sendable (Error) -> Void = { error in
+                source.cancel()
+                continuation.finish(throwing: error)
+            }
 
             source.setEventHandler {
                 do {
                     try state.drainAndEmit(continuation: continuation)
                 } catch {
-                    continuation.finish(throwing: error)
+                    cancelOnError(error)
                 }
             }
             source.setCancelHandler {
@@ -65,7 +94,7 @@ public actor JSONLTailer<T: Codable & Sendable> {
             do {
                 try state.drainAndEmit(continuation: continuation)
             } catch {
-                continuation.finish(throwing: error)
+                cancelOnError(error)
                 return
             }
 
@@ -76,7 +105,7 @@ public actor JSONLTailer<T: Codable & Sendable> {
     }
 }
 
-// 파일 크기 조회 헬퍼.
+/// 파일 크기 조회 헬퍼.
 private func currentSize(of path: URL) throws -> UInt64 {
     let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
     return (attrs[.size] as? UInt64) ?? 0
@@ -88,43 +117,70 @@ private func currentSize(of path: URL) throws -> UInt64 {
 /// Sendable 준수는 내부 lock 으로 직렬화 (동시 호출은 실제로 single queue 에서만 옴).
 private final class TailState<T: Codable & Sendable>: @unchecked Sendable {
     private let path: URL
+    private let maxPartialBytes: Int
+    private let chunkSize: Int
     private var offset: UInt64
     private var partial: Data = Data()
     private let lock = NSLock()
     private let decoder = JSONDecoder.maestro
 
-    init(path: URL, offset: UInt64) {
+    init(path: URL, offset: UInt64, maxPartialBytes: Int, chunkSize: Int) {
         self.path = path
         self.offset = offset
+        self.maxPartialBytes = maxPartialBytes
+        self.chunkSize = chunkSize
     }
 
     func drainAndEmit(continuation: AsyncThrowingStream<T, Error>.Continuation) throws {
         lock.lock()
         defer { lock.unlock() }
 
+        // Truncation 감지 — 현재 크기가 offset 보다 작으면 파일이 축소/재생성됨.
+        let currentFileSize: UInt64
+        do {
+            currentFileSize = try currentSize(of: path)
+        } catch {
+            throw PersistenceError.readFailed(path: path, underlying: "\(error)")
+        }
+        if currentFileSize < offset {
+            offset = 0
+            partial.removeAll(keepingCapacity: false)
+        }
+
         let fileHandle: FileHandle
         do {
             fileHandle = try FileHandle(forReadingFrom: path)
         } catch {
-            throw PersistenceError.atomicWriteFailed(path: path, underlying: "\(error)")
+            throw PersistenceError.readFailed(path: path, underlying: "\(error)")
         }
         defer { try? fileHandle.close() }
 
         do {
             try fileHandle.seek(toOffset: offset)
         } catch {
-            // 파일이 truncate 된 경우 offset 을 0 으로 리셋
+            // 어떤 이유로든 seek 실패 시 처음부터 재시도.
             offset = 0
+            partial.removeAll(keepingCapacity: false)
             try? fileHandle.seek(toOffset: 0)
         }
 
-        let newChunk = fileHandle.readDataToEndOfFile()
-        if newChunk.isEmpty { return }
+        // 청크 단위로 증분 읽기 — 100MB delta 도 메모리 폭발 없이 처리.
+        while true {
+            let chunk = fileHandle.readData(ofLength: chunkSize)
+            if chunk.isEmpty { break }
 
-        partial.append(newChunk)
-        offset += UInt64(newChunk.count)
+            partial.append(chunk)
+            offset += UInt64(chunk.count)
 
-        // 완성된 줄(\n 로 끝남)만 파싱. 마지막 불완전 줄은 partial 에 남김.
+            try processPartialAndEmit(continuation: continuation)
+
+            if chunk.count < chunkSize { break }  // EOF 도달
+        }
+    }
+
+    private func processPartialAndEmit(
+        continuation: AsyncThrowingStream<T, Error>.Continuation
+    ) throws {
         var lineStart = partial.startIndex
         var searchIndex = partial.startIndex
         while let newlineIdx = partial[searchIndex...].firstIndex(of: 0x0A) {
@@ -147,6 +203,13 @@ private final class TailState<T: Codable & Sendable>: @unchecked Sendable {
         // 처리한 만큼 파편 버퍼에서 제거
         if lineStart > partial.startIndex {
             partial = partial[lineStart..<partial.endIndex]
+        }
+
+        // partial 이 한계 초과 → 무한 growing 라인 방어.
+        if partial.count > maxPartialBytes {
+            throw PersistenceError.resourceLimitExceeded(
+                path: path, limit: maxPartialBytes, actual: partial.count
+            )
         }
     }
 }

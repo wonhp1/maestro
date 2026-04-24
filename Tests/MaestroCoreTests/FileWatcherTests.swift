@@ -45,6 +45,55 @@ final class FileWatcherTests: XCTestCase {
         XCTAssertTrue(collected.isEmpty, "없는 파일은 즉시 finish")
     }
 
+    func testRenameFinishesStream() async throws {
+        let path = tempDir.appending(path: "to-rename.txt")
+        FileManager.default.createFile(atPath: path.path, contents: Data("x".utf8))
+
+        let stream = FileWatcher.events(for: path)
+
+        let consumer = Task {
+            var events: [FileWatchEvent] = []
+            for await event in stream {
+                events.append(event)
+            }
+            return events
+        }
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let renamed = tempDir.appending(path: "renamed.txt")
+        try FileManager.default.moveItem(at: path, to: renamed)
+
+        let received = try await withTimeout(seconds: 2) { await consumer.value }
+        XCTAssertTrue(
+            received.contains(.renamed),
+            "rename 이벤트 수신 필요 (received: \(received))"
+        )
+    }
+
+    func testDeleteFinishesStream() async throws {
+        let path = tempDir.appending(path: "to-delete.txt")
+        FileManager.default.createFile(atPath: path.path, contents: Data("x".utf8))
+
+        let stream = FileWatcher.events(for: path)
+
+        let consumer = Task {
+            var events: [FileWatchEvent] = []
+            for await event in stream {
+                events.append(event)
+            }
+            return events
+        }
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try FileManager.default.removeItem(at: path)
+
+        let received = try await withTimeout(seconds: 2) { await consumer.value }
+        XCTAssertTrue(
+            received.contains(.deleted),
+            "delete 이벤트 수신 필요 (received: \(received))"
+        )
+    }
+
     private func withTimeout<T: Sendable>(
         seconds: Double,
         operation: @escaping @Sendable () async throws -> T

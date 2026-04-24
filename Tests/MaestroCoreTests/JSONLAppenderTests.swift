@@ -79,4 +79,49 @@ final class JSONLAppenderTests: XCTestCase {
         try await appender.appendAll([])
         XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
     }
+
+    func testConcurrentAppendsProduceValidLines() async throws {
+        let path = tempDir.appending(path: "log.jsonl")
+        let appender = JSONLAppender<Entry>(path: path)
+        // actor 는 동시 호출을 직렬화 — 100 병렬 중에도 라인이 찢어지지 않아야 한다.
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<100 {
+                group.addTask {
+                    try? await appender.append(Entry(n: index, label: "c"))
+                }
+            }
+        }
+        let contents = try String(contentsOf: path, encoding: .utf8)
+        let lines = contents.split(separator: "\n", omittingEmptySubsequences: true)
+        XCTAssertEqual(lines.count, 100, "100 번 append → 정확히 100 라인")
+        for line in lines {
+            XCTAssertNoThrow(
+                try JSONDecoder.maestro.decode(Entry.self, from: Data(line.utf8)),
+                "모든 라인이 온전한 JSON"
+            )
+        }
+    }
+
+    func testAppendCreatesFileWith0600Permissions() async throws {
+        let path = tempDir.appending(path: "log.jsonl")
+        let appender = JSONLAppender<Entry>(path: path)
+        try await appender.append(Entry(n: 1, label: "p"))
+        let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue
+        XCTAssertEqual(perms, 0o600)
+    }
+
+    func testCloseAllowsHandleReopen() async throws {
+        let path = tempDir.appending(path: "log.jsonl")
+        let appender = JSONLAppender<Entry>(path: path)
+        try await appender.append(Entry(n: 1, label: "a"))
+        await appender.close()
+        // 닫은 후에도 append 가 정상 복구
+        try await appender.append(Entry(n: 2, label: "b"))
+        let contents = try String(contentsOf: path, encoding: .utf8)
+        XCTAssertEqual(
+            contents.split(separator: "\n", omittingEmptySubsequences: true).count,
+            2
+        )
+    }
 }

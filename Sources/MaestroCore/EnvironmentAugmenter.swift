@@ -51,10 +51,13 @@ public enum EnvironmentAugmenter {
     }
 
     /// 동기 spawn — Process.run + waitUntilExit, timeout 지나면 SIGKILL.
+    /// `-ilc` 사용: interactive (`.zshrc` 강제 로드) + login (`.zprofile`) + command.
+    /// `-lc` 만 쓰면 비대화형이라 zsh 가 `.zshrc` 를 건너뜀 → 사용자가 거기 추가한
+    /// PATH (`~/.npm-global/bin` 등) 가 누락되는 v0.4.3 의 진짜 원인이었음.
     private static func extractPathSync(shellURL: URL, timeout: TimeInterval) throws -> [String] {
         let process = Process()
         process.executableURL = shellURL
-        process.arguments = ["-lc", "echo $PATH"]
+        process.arguments = ["-ilc", "echo $PATH"]
         let stdoutPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = Pipe()

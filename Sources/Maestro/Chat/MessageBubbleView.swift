@@ -40,10 +40,20 @@ struct MessageBubbleView: View {
         }
     }
 
+    /// 표시용 본문 — assistant 응답에서 `<RELAY_TO=...>...</RELAY_TO>` /
+    /// `<REPLY_TO=...>...</REPLY_TO>` XML 태그 제거. 디스패치 시스템은 원본 본문을
+    /// 그대로 파싱하므로 표시 단에서만 sanitize.
+    private var displayContent: String {
+        guard message.role == .assistant else { return message.content }
+        let stripped = ReplyParser.stripDispatchTags(message.content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? message.content : stripped
+    }
+
     @ViewBuilder
     private var bubbleContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(MarkdownRenderer.segments(message.content), id: \.self) { segment in
+            ForEach(MarkdownRenderer.segments(displayContent), id: \.self) { segment in
                 switch segment {
                 case .prose(let text):
                     if !text.isEmpty {
@@ -96,7 +106,7 @@ struct MessageBubbleView: View {
     }
 
     private var accessibilityLabel: String {
-        "\(roleLabel): \(MarkdownRenderer.plainText(message.content))"
+        "\(roleLabel): \(MarkdownRenderer.plainText(displayContent))"
     }
 
     private var accessibilityValue: String {

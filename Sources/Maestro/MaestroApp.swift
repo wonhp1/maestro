@@ -29,19 +29,51 @@ struct MaestroApp: App {
         _environment = State(wrappedValue: ControlTowerEnvironment.makeProduction())
     }
 
-    /// PATH 머지 결과를 OSLog 카테고리 `process` 로 기록 — Console.app 에서
-    /// `subsystem:com.gimgyeongwon.maestro category:process` 필터로 확인 가능.
+    /// PATH 머지 결과를 OSLog `process` 로 기록 + **디버그 파일** 기록.
+    /// 파일: `~/Library/Logs/Maestro/path-augment.log` — OSLog `<private>` 마스킹
+    /// 회피용. 매 실행마다 append. v0.4.4 안정화 후 제거 예정.
     private static func logAugmentResult(_ result: AugmentResult) {
         let logger = MaestroLogger(category: .process)
+        let summary: String
         switch result {
         case .augmented(let added):
-            logger.info("PATH augmented: +\(added) entries from login shell")
+            summary = "augmented: +\(added) entries"
+            logger.publicInfo("PATH augmented from login shell")
         case .alreadyAugmented:
-            logger.info("PATH already augmented (no-op)")
+            summary = "alreadyAugmented (no-op)"
+            logger.publicInfo("PATH already augmented")
         case .extractFailed(let error):
-            logger.error("PATH extract failed: \(String(describing: error))")
+            summary = "extractFailed: \(String(describing: error))"
+            logger.publicInfo("PATH extract failed")
         case .setenvFailed(let errno):
-            logger.error("PATH setenv failed: errno=\(errno)")
+            summary = "setenvFailed errno=\(errno)"
+            logger.publicInfo("PATH setenv failed")
+        }
+        let pathSnapshot = ProcessInfo.processInfo.environment["PATH"] ?? "(nil)"
+        let line = """
+            === \(Date()) ===
+            result: \(summary)
+            HOME: \(FileManager.default.homeDirectoryForCurrentUser.path)
+            SHELL env: \(ProcessInfo.processInfo.environment["SHELL"] ?? "(unset)")
+            PATH after augment:
+            \(pathSnapshot.split(separator: ":").map { "  \($0)" }.joined(separator: "\n"))
+            ===\n
+            """
+        let logsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Logs/Maestro", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(
+            at: logsDir, withIntermediateDirectories: true
+        )
+        let logFile = logsDir.appending(path: "path-augment.log", directoryHint: .notDirectory)
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logFile.path),
+               let handle = try? FileHandle(forWritingTo: logFile) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                try? handle.close()
+            } else {
+                try? data.write(to: logFile)
+            }
         }
     }
 

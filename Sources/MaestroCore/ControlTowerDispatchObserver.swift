@@ -74,11 +74,18 @@ public actor ControlTowerDispatchObserver: DispatchObserving {
     }
 
     public func replyReceived(reply: MessageEnvelope, sourceFolderHint: FolderID?) async {
+        // 응답은 **수신자** (reply.to) 폴더의 보고함에 기록 — 사용자가 control 폴더에서
+        // 자식 응답을 종합 확인할 수 있게. 직전 버전은 from 으로 라우팅해 보낸 사람
+        // 폴더에만 보였던 버그 (v0.4.5 fix).
         let folderID: FolderID?
         if let hint = sourceFolderHint {
             folderID = hint
         } else {
-            folderID = await agentToFolder(reply.from)
+            if let viaTo = await agentToFolder(reply.to) {
+                folderID = viaTo
+            } else {
+                folderID = await agentToFolder(reply.from)
+            }
         }
         guard let id = folderID else { return }
         await MainActor.run {

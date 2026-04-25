@@ -125,7 +125,7 @@ final class LoginShellPathExtractorTests: XCTestCase {
         _ = try await extractor.extract()
         let calls = await stub.calls
         XCTAssertEqual(calls.count, 1)
-        XCTAssertEqual(calls.first?.arguments, ["-lc", "echo $PATH"])
+        XCTAssertEqual(calls.first?.arguments, ["-ilc", "echo $PATH"])
     }
 
     // MARK: - SHELL allow-list

@@ -73,7 +73,7 @@ public struct LoginShellPathExtractor: Sendable {
         do {
             output = try await executor.run(
                 executable: shellURL,
-                arguments: ["-lc", "echo $PATH"],
+                arguments: ["-ilc", "echo $PATH"],
                 currentDirectoryURL: nil,
                 environment: environment
             )

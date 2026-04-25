@@ -10,6 +10,8 @@ public struct PreferencesSnapshot: Codable, Equatable, Sendable {
     public var enabledAdapterIDs: Set<String>
     public var preferredAdapterID: String?
     public var dispatchTimeoutSeconds: Int
+    /// Phase 23: Privacy Policy / ToS 동의 여부. 미동의 사용자는 launch 시 modal 표시.
+    public var privacyPolicyAccepted: Bool
 
     public init(
         firstRunCompleted: Bool = false,
@@ -17,7 +19,8 @@ public struct PreferencesSnapshot: Codable, Equatable, Sendable {
         launchAtLogin: Bool = false,
         enabledAdapterIDs: Set<String> = ["claude"],
         preferredAdapterID: String? = "claude",
-        dispatchTimeoutSeconds: Int = 120
+        dispatchTimeoutSeconds: Int = 120,
+        privacyPolicyAccepted: Bool = false
     ) {
         self.firstRunCompleted = firstRunCompleted
         self.notificationsEnabled = notificationsEnabled
@@ -25,6 +28,7 @@ public struct PreferencesSnapshot: Codable, Equatable, Sendable {
         self.enabledAdapterIDs = enabledAdapterIDs
         self.preferredAdapterID = preferredAdapterID
         self.dispatchTimeoutSeconds = max(5, min(dispatchTimeoutSeconds, 3600))
+        self.privacyPolicyAccepted = privacyPolicyAccepted
     }
 
     public static let `default` = PreferencesSnapshot()

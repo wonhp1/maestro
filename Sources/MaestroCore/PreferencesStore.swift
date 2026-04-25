@@ -87,6 +87,11 @@ public final class PreferencesStore {
         scheduleAutosave()
     }
 
+    public func setPrivacyPolicyAccepted(_ value: Bool) {
+        snapshot.privacyPolicyAccepted = value
+        scheduleAutosave()
+    }
+
     public func replaceSnapshot(_ next: PreferencesSnapshot) {
         snapshot = next
         scheduleAutosave()

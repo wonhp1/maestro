@@ -98,7 +98,7 @@ public extension AgentAdapter {
 // MARK: - Errors
 
 /// 어댑터 공통 에러. 구현체별 에러는 별도 정의 가능.
-public enum AdapterError: Error, Equatable, Sendable {
+public enum AdapterError: Error, Equatable, Sendable, LocalizedError {
     /// CLI 가 설치되어 있지 않거나 PATH 에서 찾을 수 없음.
     case notInstalled(adapterId: String)
     /// 세션 생성 실패 — 사유 메시지 동봉.
@@ -109,4 +109,39 @@ public enum AdapterError: Error, Equatable, Sendable {
     case processFailed(exitCode: Int32, stderr: String)
     /// 어댑터가 해당 작업을 지원하지 않음.
     case unsupported(operation: String)
+
+    /// 사용자에게 친화적인 한국어 메시지. 에러 case 이름 (".AdapterError error 0") 대신
+    /// "claude CLI 가 설치되어 있지 않아요…" 처럼 구체적 안내.
+    public var errorDescription: String? {
+        switch self {
+        case .notInstalled(let adapterId):
+            return notInstalledMessage(adapterId: adapterId)
+        case .sessionCreationFailed(let reason):
+            return "세션 생성 실패: \(reason)"
+        case .unknownSession(let id):
+            return "알 수 없는 세션: \(id.rawValue)"
+        case .processFailed(let exitCode, let stderr):
+            let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "에이전트 프로세스 실패 (exit \(exitCode)): \(trimmed)"
+        case .unsupported(let operation):
+            return "이 어댑터는 \(operation) 동작을 지원하지 않아요."
+        }
+    }
+
+    private func notInstalledMessage(adapterId: String) -> String {
+        switch adapterId {
+        case "claude":
+            return """
+            Claude Code CLI 를 찾지 못했어요.
+            터미널에서 `npm install -g @anthropic-ai/claude-code` 로 설치해주세요.
+            """
+        case "aider":
+            return """
+            Aider CLI 를 찾지 못했어요.
+            터미널에서 `pip install aider-chat` 로 설치해주세요.
+            """
+        default:
+            return "어댑터 \(adapterId) 의 CLI 를 PATH 에서 찾지 못했어요."
+        }
+    }
 }

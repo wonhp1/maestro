@@ -78,7 +78,9 @@ private struct MaestroSettingsRoot: View {
                 preferences: prefs,
                 apiKeyStorage: environment.apiKeyStorage,
                 dataFolderURL: paths.root,
-                onExportDiagnostics: { /* Phase 22 */ },
+                onExportDiagnostics: {
+                    await DiagnosticsExporter.exportInteractive(paths: paths)
+                },
                 onRequestNotificationPermission: {
                     _ = await environment.notificationService.requestAuthorization()
                 }

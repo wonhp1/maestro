@@ -10,6 +10,34 @@ extension ControlTowerEnvironment {
         let crashDir = paths.root.appending(path: "crashes", directoryHint: .isDirectory)
         let reporter = CrashReporter(directory: crashDir)
         reporter.install()
+        // Phase v0.4.3 — 직전 실행에서 캡처된 크래시가 있으면 alert.
+        showPendingCrashAlertIfNeeded(reporter: reporter)
+    }
+
+    /// 직전 실행 시 capture 된 unread crash report 가 있으면 사용자에게 알림 + 진단 번들
+    /// export 옵션 제공.
+    private func showPendingCrashAlertIfNeeded(reporter: CrashReporter) {
+        let reports: [CrashReport]
+        do {
+            reports = try reporter.loadPendingReports()
+        } catch {
+            return  // load 실패는 fatal 아님
+        }
+        guard !reports.isEmpty else { return }
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.messageText = "이전 실행에서 \(reports.count) 건의 크래시가 감지됐어요"
+            alert.informativeText = "진단 번들로 보내주시면 문제 파악에 큰 도움이 됩니다."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "진단 번들 만들기")
+            alert.addButton(withTitle: "나중에")
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn,
+               let paths = self.resolvedPaths {
+                await DiagnosticsExporter.exportInteractive(paths: paths)
+            }
+            try? reporter.dismissAll()
+        }
     }
 
     /// Phase 25 — DataMigrator coordinator 부팅 시 실행. 현재 v0 baseline 이라 no-op.

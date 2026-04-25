@@ -4,19 +4,42 @@ import Foundation
 ///
 /// 구체 구현은 `DefaultProcessExecutor`. 테스트는 stub 으로 교체.
 public protocol ProcessExecuting: Sendable {
-    /// - Parameter currentDirectoryURL: 자식 프로세스의 작업 디렉토리.
-    ///   `nil` 이면 호출 프로세스의 cwd 상속. Phase 7+ 어댑터는 프로젝트 폴더 지정 필수.
+    /// - Parameters:
+    ///   - currentDirectoryURL: 자식 프로세스의 작업 디렉토리. `nil` 이면 호출 프로세스 cwd 상속.
+    ///   - environment: 자식의 환경 변수. `nil` 이면 호출 프로세스 환경 상속.
+    ///     **시크릿 누출 방지를 위해 어댑터는 `EnvironmentSanitizer.default.sanitizedProcessEnvironment()`
+    ///     를 명시적으로 전달할 것** (Phase 6 권장).
     func run(
         executable: URL,
         arguments: [String],
-        currentDirectoryURL: URL?
+        currentDirectoryURL: URL?,
+        environment: [String: String]?
     ) async throws -> ProcessOutput
 }
 
 public extension ProcessExecuting {
-    /// cwd 를 명시 안 하는 호출용 편의 — 호출 프로세스 cwd 상속.
+    /// cwd / env 모두 호출 프로세스 상속 — 단순 케이스용.
     func run(executable: URL, arguments: [String]) async throws -> ProcessOutput {
-        try await run(executable: executable, arguments: arguments, currentDirectoryURL: nil)
+        try await run(
+            executable: executable,
+            arguments: arguments,
+            currentDirectoryURL: nil,
+            environment: nil
+        )
+    }
+
+    /// cwd 만 지정, env 는 상속 — 기존 호출자 호환.
+    func run(
+        executable: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?
+    ) async throws -> ProcessOutput {
+        try await run(
+            executable: executable,
+            arguments: arguments,
+            currentDirectoryURL: currentDirectoryURL,
+            environment: nil
+        )
     }
 }
 
@@ -73,13 +96,17 @@ public struct DefaultProcessExecutor: ProcessExecuting {
     public func run(
         executable: URL,
         arguments: [String],
-        currentDirectoryURL: URL?
+        currentDirectoryURL: URL?,
+        environment: [String: String]?
     ) async throws -> ProcessOutput {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
         if let cwd = currentDirectoryURL {
             process.currentDirectoryURL = cwd
+        }
+        if let env = environment {
+            process.environment = env
         }
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -230,7 +257,8 @@ private final class OneShot<T: Sendable>: @unchecked Sendable {
 /// `Process.terminationHandler` 를 callback / async wait 양쪽으로 노출하는 일회성 게이트.
 ///
 /// `notify()` 한 번 호출되면 이후 등록된 모든 콜백 즉시 실행, 이전 등록된 것도 실행. 멱등.
-private final class ExitNotifier: @unchecked Sendable {
+/// internal — `ProcessStreamer` 와 `ProcessExecuting` 모두 사용.
+final class ExitNotifier: @unchecked Sendable {
     private let lock = NSLock()
     private var fired = false
     private var callbacks: [@Sendable () -> Void] = []

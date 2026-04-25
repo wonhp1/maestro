@@ -270,7 +270,7 @@ Architecture Decisions 섹션 기준 준수 확인.
 | P3    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-3.md](../reviews/phase-3.md) |
 | P4    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-4.md](../reviews/phase-4.md) |
 | P5    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-5.md](../reviews/phase-5.md) |
-| P6    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-6.md                          |
+| P6    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-6.md](../reviews/phase-6.md) |
 | P7    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-7.md                          |
 | P8    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-8.md                          |
 | P9    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-9.md                          |
@@ -1054,46 +1054,47 @@ swiftlint --strict             # 0 violations
 
 **Goal**: CLI를 안전하게 실행하고 출력을 스트리밍하는 공용 인프라.
 **Estimated Time**: 4일
-**Status**: ⏳ Pending
+**Status**: ✅ Complete (2026-04-25)
 
 #### Tasks
 
 **🔴 RED**
 
-- [ ] **Test 6.1**: `ProcessRunnerTests` — 기본 실행, 종료 코드, stdout/stderr 분리
-- [ ] **Test 6.2**: `ProcessStreamerTests` — AsyncStream으로 라인 단위 출력
-- [ ] **Test 6.3**: `ProcessRunnerTests.timeout` — 타임아웃 처리
-- [ ] **Test 6.4**: `ProcessRunnerTests.cancel` — Task 취소 시 프로세스 종료
+- [x] **Test 6.1**: `ProcessExecutorEnvTests` — env 매개변수 (Phase 4 의 ProcessExecutor 재사용)
+- [x] **Test 6.2**: `ProcessStreamerTests` — AsyncThrowingStream 라인 단위 출력 (16 케이스)
+- [x] **Test 6.3**: `ProcessStreamerTests.testTimeoutTerminatesAndStreamThrows` — 타임아웃
+- [x] **Test 6.4**: `ProcessStreamerTests.testCancellationKillsChildPromptly` — Task 취소
 
 **🟢 GREEN**
 
-- [ ] **Task 6.5**: `ProcessRunner` — `Foundation.Process` async/await 래퍼
-- [ ] **Task 6.6**: `ProcessStreamer` — 라인 버퍼링 + AsyncStream
-- [ ] **Task 6.7**: 환경 변수 sanitization (OAuth 토큰 제거 등)
-- [ ] **Task 6.8**: 작업 디렉토리 설정 지원
-- [ ] **Task 6.9**: 취소/타임아웃 처리
+- [x] **Task 6.5**: `DefaultProcessExecutor` (Phase 4) — env 매개변수 추가
+- [x] **Task 6.6**: `DefaultProcessStreamer` — Task-based 동시 drain + LineBuffer (CRLF + cap)
+- [x] **Task 6.7**: `EnvironmentSanitizer` — deny + suffix + strict allow-list 프리셋
+- [x] **Task 6.8**: `currentDirectoryURL` 매개변수 (Phase 5 에서 도입, Phase 6 에서 streamer 도 채택)
+- [x] **Task 6.9**: 취소/타임아웃 — withTaskCancellationHandler + watchdog Task
 
 **🔵 REFACTOR**
 
-- [ ] **Task 6.10**: SIGTERM → SIGKILL 단계적 종료
-- [ ] **Task 6.11**: 에러 메시지 개선 (실패 시 stderr 포함)
+- [x] **Task 6.10**: SIGTERM → grace → SIGKILL + PID reuse 가드
+- [x] **Task 6.11**: `.exited(exitCode, reason)` — `.exit` / `.uncaughtSignal` 구분, 에러 컨텍스트 명확
 
 #### Quality Gate ✋
 
-- [ ] `echo "hello"` 실행 + 출력 캡처 성공
-- [ ] 100ms 타임아웃 테스트 통과
-- [ ] Task 취소 시 좀비 프로세스 없음
+- [x] `/bin/echo` 실행 + 출력 캡처 성공
+- [x] 0.3초 타임아웃 테스트 통과
+- [x] Task 취소 시 5초 내 자식 종료
+- [x] 5000 라인 high-volume 모두 보존
 
 **🔬 Review & Verification** (→ [Phase Completion Protocol](#-phase-completion-protocol-모든-phase-공통) 6단계 적용):
 
-- [ ] Step 1: 🔍 Self Code Review 완료
-- [ ] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality / docs) + must-fix 반영
-- [ ] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
-- [ ] Step 4: 🧩 Integration Verification
-- [ ] Step 5: 🔄 Regression Check
-- [ ] Step 6: 📐 Architecture Compliance
-- [ ] `docs/reviews/phase-6.md` 리뷰 리포트 저장
-- [ ] **Phase별 리뷰 트래커** P6 행 모두 체크
+- [x] Step 1: 🔍 Self Code Review 완료
+- [x] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality) + must-fix 12건 전원 반영
+- [x] Step 3: ✨ `/simplify` 리뷰 + 2건 적용 (denySubstrings 제거 + ExitNotifier 통합)
+- [x] Step 4: 🧩 Integration Verification (release build + app spawn)
+- [x] Step 5: 🔄 Regression Check (Phase 1-5 통과, 208 → 237)
+- [x] Step 6: 📐 Architecture Compliance (Core 단독)
+- [x] `docs/reviews/phase-6.md` 리뷰 리포트 저장
+- [x] **Phase별 리뷰 트래커** P6 행 모두 체크
 
 ---
 
@@ -2022,32 +2023,32 @@ P21(패키징) 완료 후 앱이 "설치는 되는" 상태. M8에서 **실사용
 
 ### Time Tracking
 
-| Phase     |        Estimated         | Actual |          Variance          |
-| --------- | :----------------------: | :----: | :------------------------: |
-| P1        |          3-4일           | ~3시간 |    -2.5일(scaffolding)     |
-| P2        |          4-5일           | ~4시간 |      -4일 (순수 타입)      |
-| P3        |           5일            | ~6시간 |    -4일 (must-fix 포함)    |
-| P4        |          4-5일           | ~5시간 | -4일 (must-fix 13건 포함)  |
-| P5        |           3일            | ~3시간 | -2.5일 (must-fix 9건 포함) |
-| P6        |           4일            |   -    |             -              |
-| P7        |           5일            |   -    |             -              |
-| P8        |           5일            |   -    |             -              |
-| P9        |           5일            |   -    |             -              |
-| P10       |           5일            |   -    |             -              |
-| P11       |           5일            |   -    |             -              |
-| P12       |          5-6일           |   -    |             -              |
-| P13       |           5일            |   -    |             -              |
-| P14       |           5일            |   -    |             -              |
-| P15       |           5일            |   -    |             -              |
-| P16       |          4-5일           |   -    |             -              |
-| P17       |           4일            |   -    |             -              |
-| P18       |          3-4일           |   -    |             -              |
-| P19       |           5일            |   -    |             -              |
-| P20       |           5일            |   -    |             -              |
-| P21       |           5일            |   -    |             -              |
-| P22       |          5-6일           |   -    |             -              |
-| P23       |          5-7일           |   -    |             -              |
-| **Total** | **~105-115일 (약 20주)** |   -    |             -              |
+| Phase     |        Estimated         | Actual |          Variance           |
+| --------- | :----------------------: | :----: | :-------------------------: |
+| P1        |          3-4일           | ~3시간 |     -2.5일(scaffolding)     |
+| P2        |          4-5일           | ~4시간 |      -4일 (순수 타입)       |
+| P3        |           5일            | ~6시간 |    -4일 (must-fix 포함)     |
+| P4        |          4-5일           | ~5시간 |  -4일 (must-fix 13건 포함)  |
+| P5        |           3일            | ~3시간 | -2.5일 (must-fix 9건 포함)  |
+| P6        |           4일            | ~3시간 | -3.5일 (must-fix 12건 포함) |
+| P7        |           5일            |   -    |              -              |
+| P8        |           5일            |   -    |              -              |
+| P9        |           5일            |   -    |              -              |
+| P10       |           5일            |   -    |              -              |
+| P11       |           5일            |   -    |              -              |
+| P12       |          5-6일           |   -    |              -              |
+| P13       |           5일            |   -    |              -              |
+| P14       |           5일            |   -    |              -              |
+| P15       |           5일            |   -    |              -              |
+| P16       |          4-5일           |   -    |              -              |
+| P17       |           4일            |   -    |              -              |
+| P18       |          3-4일           |   -    |              -              |
+| P19       |           5일            |   -    |              -              |
+| P20       |           5일            |   -    |              -              |
+| P21       |           5일            |   -    |              -              |
+| P22       |          5-6일           |   -    |              -              |
+| P23       |          5-7일           |   -    |              -              |
+| **Total** | **~105-115일 (약 20주)** |   -    |              -              |
 
 ---
 

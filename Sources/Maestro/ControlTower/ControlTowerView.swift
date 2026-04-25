@@ -16,6 +16,7 @@ import SwiftUI
 struct ControlTowerView: View {
     @Bindable var environment: ControlTowerEnvironment
     @State private var dockBadgeUpdater: DockBadgeUpdater?
+    @State private var onboardingViewModel: OnboardingViewModel?
 
     var body: some View {
         NavigationSplitView {
@@ -83,6 +84,21 @@ struct ControlTowerView: View {
         .background(folderShortcuts)
         .sheet(isPresented: Bindable(environment.commandPaletteViewModel).isPresented) {
             CommandPaletteView(viewModel: environment.commandPaletteViewModel)
+        }
+        .sheet(isPresented: $environment.showOnboarding) {
+            if let viewModel = onboardingViewModel {
+                OnboardingView(viewModel: viewModel) {
+                    await environment.folderViewModel?.addFolderViaPicker()
+                }
+            }
+        }
+        .onChange(of: environment.preferencesStore?.snapshot.firstRunCompleted) { _, completed in
+            if completed == true { environment.showOnboarding = false }
+        }
+        .task(id: environment.preferencesStore != nil) {
+            if let prefs = environment.preferencesStore, onboardingViewModel == nil {
+                onboardingViewModel = OnboardingViewModel(preferences: prefs)
+            }
         }
     }
 
@@ -190,9 +206,15 @@ public final class ControlTowerEnvironment {
     public let menuActionRouter: MenuActionRouter
     public let activitySummary: AppActivitySummary
     public let notificationService: NotificationService
+    public let apiKeyStorage: APIKeyStorage
+    /// bootstrap() 후 set — 실제 디스크 경로로 생성. 그 전엔 nil.
+    public private(set) var preferencesStore: PreferencesStore?
     public private(set) var folderViewModel: FolderViewModel?
     public private(set) var dispatchService: DispatchService?
     public private(set) var pendingSlashInsertion: String?
+    public private(set) var resolvedPaths: AppSupportPaths?
+    /// `MaestroApp` 가 메인 윈도우에 onboarding sheet 띄울지 여부.
+    public var showOnboarding: Bool = false
 
     @ObservationIgnored
     private let pathsProvider: () throws -> AppSupportPaths
@@ -213,7 +235,9 @@ public final class ControlTowerEnvironment {
         statusStore: AgentStatusStore = AgentStatusStore(),
         inboxStore: InboxStore = InboxStore(),
         orchestrationStatus: OrchestrationStatusModel = OrchestrationStatusModel(),
-        notificationService: NotificationService? = nil
+        notificationService: NotificationService? = nil,
+        preferencesStore: PreferencesStore? = nil,
+        apiKeyStorage: APIKeyStorage = APIKeyStorage()
     ) {
         self.pathsProvider = pathsProvider
         self.pickerFactory = pickerFactory
@@ -235,6 +259,10 @@ public final class ControlTowerEnvironment {
         self.menuActionRouter = MenuActionRouter()
         self.activitySummary = AppActivitySummary()
         self.notificationService = notificationService ?? NoopNotificationService()
+        self.apiKeyStorage = apiKeyStorage
+        // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
+        // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
+        self.preferencesStore = preferencesStore
     }
 
     /// DispatchComposer 가 읽고 가져간 후 nil 로 클리어.
@@ -277,6 +305,14 @@ public final class ControlTowerEnvironment {
         do {
             let paths = try pathsProvider()
             try paths.ensureAllDirectoriesExist()
+            self.resolvedPaths = paths
+            // PreferencesStore — 디스크 경로 확정된 후 생성 (테스트가 미리 주입한 경우 보존).
+            if preferencesStore == nil {
+                let store = PreferencesStore(path: paths.preferencesFile)
+                await store.bootstrap()
+                self.preferencesStore = store
+            }
+            self.showOnboarding = !(preferencesStore?.snapshot.firstRunCompleted ?? true)
             let registry = FolderRegistry(paths: paths)
             let viewModel = FolderViewModel(
                 registry: registry,
@@ -316,7 +352,13 @@ public final class ControlTowerEnvironment {
                 NSWorkspace.shared.activateFileViewerSelecting([dataRoot])
             }
         }
-        // 진단 / 환경설정 / 도움말은 Phase 19 에서 wiring — 현재는 noop 유지.
+        // 환경설정 ⌘, — Settings Scene 자동 트리거 (NSApp.sendAction).
+        menuActionRouter.onOpenPreferences = {
+            await MainActor.run {
+                _ = NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+        }
+        // 진단 / 도움말은 Phase 22 polish 에서 wiring — 현재는 noop 유지.
     }
 
     private func deleteSelectedFolder() async {

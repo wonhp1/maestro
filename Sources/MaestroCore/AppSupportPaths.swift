@@ -51,6 +51,10 @@ public struct AppSupportPaths: Sendable {
         root.appending(path: "folders.json", directoryHint: .notDirectory)
     }
 
+    public var preferencesFile: URL {
+        root.appending(path: "preferences.json", directoryHint: .notDirectory)
+    }
+
     // MARK: Directories
 
     public var sessionsDir: URL { root.appending(path: "sessions", directoryHint: .isDirectory) }

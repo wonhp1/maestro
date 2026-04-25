@@ -283,7 +283,7 @@ Architecture Decisions 섹션 기준 준수 확인.
 | P16   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-16.md](../reviews/phase-16.md) |
 | P17   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-17.md](../reviews/phase-17.md) |
 | P18   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-18.md](../reviews/phase-18.md) |
-| P19   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-19.md                           |
+| P19   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-19.md](../reviews/phase-19.md) |
 | P20   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-20.md                           |
 | P21   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-21.md                           |
 | P22   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-22.md                           |
@@ -1679,52 +1679,45 @@ swiftlint --strict             # 0 violations
 
 **Goal**: 첫 실행 가이드, 설정 화면, API 키 안전 저장.
 **Estimated Time**: 5일
-**Status**: ⏳ Pending
+**Status**: ✅ Complete (2026-04-25)
 
 #### Tasks
 
 **🔴 RED**
 
-- [ ] **Test 19.1**: `OnboardingViewModelTests` — 단계별 진행
-- [ ] **Test 19.2**: `PreferencesStoreTests` — 설정 저장/복원
-- [ ] **Test 19.3**: `APIKeyStorageTests` — Keychain 통합 (Phase 3 연계)
+- [x] **Test 19.1**: `OnboardingViewModelTests` (7) — 단계별 진행 + skip + complete
+- [x] **Test 19.2**: `PreferencesStoreTests` (7) — defaults / persist / corrupt fallback / replace
+- [x] **Test 19.3**: `APIKeyStorageTests` (7) — Keychain roundtrip / namespace / invalid ID
 
 **🟢 GREEN**
 
-- [ ] **Task 19.4**: `OnboardingView` — 3단계
-  1. 환영 + 개념 설명
-  2. CLI 감지 결과 (설치된/미설치 에이전트 목록 + 설치 가이드)
-  3. 첫 폴더 추가
-- [ ] **Task 19.5**: `PreferencesView` — Tab 기반
-  - General: 실행/업데이트/알림
-  - Agents: 어댑터 활성화, API 키 입력
-  - Shortcuts: 단축키 커스터마이징
-  - Advanced: 로그, 진단, 데이터 위치
-- [ ] **Task 19.6**: API 키 입력 필드 (SecureField) → Keychain 저장
-- [ ] **Task 19.7**: "데이터 폴더 Finder에서 열기" 버튼
-- [ ] **Task 19.8**: "진단 번들 생성" 버튼 (Phase 5 활용)
+- [x] **Task 19.4**: `OnboardingView` — 3단계 (welcome / detectAgents / firstFolder)
+- [x] **Task 19.5**: `PreferencesView` — Tab 4개 (General / Agents / Shortcuts / Advanced)
+- [x] **Task 19.6**: API 키 SecureField → `APIKeyStorage` → Keychain 즉시 저장 + .onDisappear 메모리 clear (must-fix /team SEC)
+- [x] **Task 19.7**: "데이터 폴더 Finder 에서 열기" — Advanced pane + ⌘⇧O 메뉴 단축키
+- [ ] **Task 19.8**: "진단 번들 생성" — UI 자리 마련, wiring 은 Phase 22 defer
 
 **🔵 REFACTOR**
 
-- [ ] **Task 19.9**: 첫 실행 감지 (`UserDefaults` 플래그)
-- [ ] **Task 19.10**: 설정 변경 실시간 적용
+- [x] **Task 19.9**: 첫 실행 감지 — `PreferencesSnapshot.firstRunCompleted` + ControlTowerView sheet
+- [x] **Task 19.10**: 설정 변경 실시간 적용 — `@Observable` propagation + 100ms debounce autosave
 
 #### Quality Gate ✋
 
-- [ ] 처음 앱 실행 시 온보딩 3단계 완주 가능
-- [ ] API 키가 Keychain에만 저장 (파일 검색 시 평문 없음)
-- [ ] 모든 설정 변경이 재시작 없이 반영
+- [x] 처음 앱 실행 시 온보딩 3단계 완주 — `OnboardingViewModel.advance()` 마지막에서 `complete()` 자동
+- [x] API 키가 Keychain 에만 저장 — `APIKeyStorage` 가 `KeychainStore` 만, `PreferencesSnapshot` 에 키 필드 없음, `.onDisappear` 메모리 clear
+- [x] 모든 설정 변경이 재시작 없이 반영 — `@Observable` + 100ms debounce autosave
 
 **🔬 Review & Verification** (→ [Phase Completion Protocol](#-phase-completion-protocol-모든-phase-공통) 6단계 적용):
 
-- [ ] Step 1: 🔍 Self Code Review 완료
-- [ ] Step 2: 👥 `/team` 멀티 리뷰 (architecture / **security** / performance / test-quality / **ux** / docs) + must-fix 반영 _(Keychain 사용 보안 검증 최우선)_
-- [ ] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
-- [ ] Step 4: 🧩 Integration Verification (새 사용자 온보딩 시뮬레이션)
-- [ ] Step 5: 🔄 Regression Check
-- [ ] Step 6: 📐 Architecture Compliance (시크릿 파일 저장 금지)
-- [ ] `docs/reviews/phase-19.md` 리뷰 리포트 저장
-- [ ] **Phase별 리뷰 트래커** P19 행 모두 체크
+- [x] Step 1: 🔍 Self Code Review 완료
+- [x] Step 2: 👥 `/team` 멀티 리뷰 — must-fix 1건 반영 (HIGH SEC: API 키 메모리 clear), 3건 defer
+- [x] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
+- [x] Step 4: 🧩 Integration Verification (Settings Scene + Onboarding sheet wiring)
+- [x] Step 5: 🔄 Regression Check (603 → 624, +21)
+- [x] Step 6: 📐 Architecture Compliance (시크릿 파일 저장 0건 검증)
+- [x] `docs/reviews/phase-19.md` 리뷰 리포트 저장
+- [x] **Phase별 리뷰 트래커** P19 행 모두 체크
 
 ---
 

@@ -157,6 +157,7 @@ private struct CommandRow: View {
         case .folder: return "folder.fill"
         case .dispatch: return "paperplane.fill"
         case .discussion: return "bubble.left.and.bubble.right.fill"
+        case .slash: return "terminal.fill"
         case .system: return "gearshape.fill"
         case .recent: return "clock"
         }
@@ -167,6 +168,7 @@ private struct CommandRow: View {
         case .folder: return .blue
         case .dispatch: return .green
         case .discussion: return .purple
+        case .slash: return .indigo
         case .system: return .gray
         case .recent: return .orange
         }

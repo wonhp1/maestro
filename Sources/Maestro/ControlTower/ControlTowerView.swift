@@ -171,8 +171,10 @@ public final class ControlTowerEnvironment {
     public let commandRegistry: CommandRegistry
     public let recentCommandTracker: RecentCommandTracker
     public let commandPaletteViewModel: CommandPaletteViewModel
+    public let slashCommandRegistry: SlashCommandRegistry
     public private(set) var folderViewModel: FolderViewModel?
     public private(set) var dispatchService: DispatchService?
+    public private(set) var pendingSlashInsertion: String?
 
     @ObservationIgnored
     private let pathsProvider: () throws -> AppSupportPaths
@@ -180,6 +182,8 @@ public final class ControlTowerEnvironment {
     private let pickerFactory: @MainActor () -> FolderPicking
     @ObservationIgnored
     private let envelopeStorage: EnvelopeStorage = EnvelopeStorage()
+    @ObservationIgnored
+    private var slashCommandWatcher: SlashCommandWatcher?
 
     public init(
         pathsProvider: @escaping () throws -> AppSupportPaths,
@@ -206,6 +210,13 @@ public final class ControlTowerEnvironment {
         self.commandPaletteViewModel = CommandPaletteViewModel(
             registry: registry, recentTracker: tracker
         )
+        self.slashCommandRegistry = SlashCommandRegistry()
+    }
+
+    /// DispatchComposer 가 읽고 가져간 후 nil 로 클리어.
+    public func consumePendingSlashInsertion() -> String? {
+        defer { pendingSlashInsertion = nil }
+        return pendingSlashInsertion
     }
 
     /// production 기본 환경 — NSOpenPanelFolderPicker + MockAdapter (Phase 14+ 에서 실제 어댑터 wiring).
@@ -255,9 +266,42 @@ public final class ControlTowerEnvironment {
                 FolderCommandProvider(folderViewModel: viewModel),
                 id: "folder"
             )
+            await wireSlashCommands()
         } catch {
             self.folderViewModel = nil
         }
+    }
+
+    /// 슬래시 명령 자동 탐색 wiring — `~/.claude/commands` + `~/.claude/skills`.
+    private func wireSlashCommands() async {
+        let commandsDir = FileSlashCommandSource.defaultUserCommandsURL()
+        let skillsDir = SkillSource.defaultUserSkillsURL()
+
+        await slashCommandRegistry.register(
+            FileSlashCommandSource(directory: commandsDir, kind: .userFile),
+            id: "user-file"
+        )
+        await slashCommandRegistry.register(
+            SkillSource(directory: skillsDir),
+            id: "skill"
+        )
+
+        let watcher = SlashCommandWatcher(
+            directories: [commandsDir, skillsDir],
+            registry: slashCommandRegistry
+        )
+        await watcher.start()
+        self.slashCommandWatcher = watcher
+
+        let provider = SlashCommandPaletteProvider(
+            registry: slashCommandRegistry,
+            onSelect: { [weak self] discovered in
+                guard let self else { return }
+                let argHint = discovered.command.arguments?.first.map { " <\($0)>" } ?? ""
+                self.pendingSlashInsertion = "/\(discovered.command.name)\(argHint)"
+            }
+        )
+        await commandRegistry.register(provider, id: "slash")
     }
 
     /// DispatchService 를 wiring — Phase 13.

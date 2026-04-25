@@ -36,6 +36,8 @@ public enum CommandCategory: String, Sendable, CaseIterable {
     case dispatch
     /// 토론 시작 / 일시정지 / 종료
     case discussion
+    /// 슬래시 명령 (`~/.claude/commands`, 내장, 스킬)
+    case slash
     /// 설정 / 진단 / 도움말
     case system
     /// 최근 사용 (자동 채워짐)
@@ -46,6 +48,7 @@ public enum CommandCategory: String, Sendable, CaseIterable {
         case .folder: return "폴더"
         case .dispatch: return "보내기"
         case .discussion: return "토론"
+        case .slash: return "슬래시"
         case .system: return "시스템"
         case .recent: return "최근"
         }
@@ -55,9 +58,10 @@ public enum CommandCategory: String, Sendable, CaseIterable {
         switch self {
         case .recent: return 0
         case .folder: return 1
-        case .dispatch: return 2
-        case .discussion: return 3
-        case .system: return 4
+        case .slash: return 2
+        case .dispatch: return 3
+        case .discussion: return 4
+        case .system: return 5
         }
     }
 }

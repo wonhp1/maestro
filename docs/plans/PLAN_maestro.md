@@ -281,7 +281,7 @@ Architecture Decisions 섹션 기준 준수 확인.
 | P14   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-14.md](../reviews/phase-14.md) |
 | P15   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-15.md](../reviews/phase-15.md) |
 | P16   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-16.md](../reviews/phase-16.md) |
-| P17   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-17.md                           |
+| P17   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-17.md](../reviews/phase-17.md) |
 | P18   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-18.md                           |
 | P19   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-19.md                           |
 | P20   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-20.md                           |
@@ -1584,46 +1584,46 @@ swiftlint --strict             # 0 violations
 
 **Goal**: `~/.claude/commands/`, 플러그인, 스킬 실시간 감시 + UI 자동 반영.
 **Estimated Time**: 4일
-**Status**: ⏳ Pending
+**Status**: ✅ Complete (2026-04-25)
 
 #### Tasks
 
 **🔴 RED**
 
-- [ ] **Test 17.1**: `SlashCommandRegistryTests` — 파일 스캔 + 캐시
-- [ ] **Test 17.2**: `SlashCommandWatcherTests` — 변경 실시간 반영
-- [ ] **Test 17.3**: `BuiltinProberTests` — `/help` 파싱 + 캐싱
+- [x] **Test 17.1**: `SlashCommandRegistryTests` — 파일 스캔 + 캐시 (8 tests)
+- [x] **Test 17.2**: `SlashCommandWatcherTests` — 변경 실시간 반영 (3 tests)
+- [x] **Test 17.3**: `BuiltinProberTests` — `/help` 파싱 + 캐싱 (13 tests)
 
 **🟢 GREEN**
 
-- [ ] **Task 17.4**: `SlashCommandRegistry` — 모든 소스 통합 (file/builtin/plugin)
-- [ ] **Task 17.5**: `SlashCommandWatcher` — `~/.claude/**` 감시
-- [ ] **Task 17.6**: `BuiltinProber` — `claude -p "/help"` 캐싱 (24h TTL)
-- [ ] **Task 17.7**: 커맨드 팔레트에 슬래시 섹션 통합
-- [ ] **Task 17.8**: 인수 입력 폼 (frontmatter의 `argument-hint` 활용)
-- [ ] **Task 17.9**: 스킬 탐색 (`~/.claude/skills/*/SKILL.md`)
+- [x] **Task 17.4**: `SlashCommandRegistry` — 모든 소스 통합 (file/builtin/skill, plugin은 Phase 17+ defer)
+- [x] **Task 17.5**: `SlashCommandWatcher` — `~/.claude/commands` + `~/.claude/skills` 감시
+- [x] **Task 17.6**: `BuiltinSlashCommandProber` — `claude -p "/help"` 캐싱 (24h TTL + binary path/mtime 무효화)
+- [x] **Task 17.7**: 커맨드 팔레트에 슬래시 섹션 통합 (`SlashCommandPaletteProvider` + `.slash` 카테고리)
+- [ ] **Task 17.8**: 인수 입력 폼 — Phase 17 은 `argument-hint` 메타데이터 + `pendingSlashInsertion` side-channel 만 ship. UI form 은 Phase 18+ defer
+- [x] **Task 17.9**: 스킬 탐색 (`SkillSource` — `~/.claude/skills/*/SKILL.md`)
 
 **🔵 REFACTOR**
 
-- [ ] **Task 17.10**: 캐시 무효화 전략 정리
-- [ ] **Task 17.11**: 소스별 아이콘/섹션
+- [x] **Task 17.10**: 캐시 무효화 전략 정리 (TTL + binary path/mtime, register/unregister cache=nil)
+- [ ] **Task 17.11**: 소스별 아이콘/섹션 — Phase 17 은 단일 `.slash` 카테고리 + `displayLabel` subtitle fallback. 별도 섹션 분리는 Phase 19 polish defer
 
 #### Quality Gate ✋
 
-- [ ] `~/.claude/commands/new.md` 추가 시 5초 이내 UI 반영
-- [ ] Claude Code 버전 업그레이드 시 내장 명령어 재프로빙
-- [ ] 20+ 슬래시 명령어 중 원하는 거 즉시 검색
+- [x] `~/.claude/commands/new.md` 추가 시 5초 이내 UI 반영 — `SlashCommandWatcherTests.testFileAdditionTriggersRefresh` 검증
+- [x] Claude Code 버전 업그레이드 시 내장 명령어 재프로빙 — `BuiltinSlashCommandProberTests.testBinaryPathChangeInvalidatesCache` + binary mtime 검사
+- [x] 20+ 슬래시 명령어 중 원하는 거 즉시 검색 — Phase 16 `CommandRegistry` + `FuzzyMatcher` 통합
 
 **🔬 Review & Verification** (→ [Phase Completion Protocol](#-phase-completion-protocol-모든-phase-공통) 6단계 적용):
 
-- [ ] Step 1: 🔍 Self Code Review 완료
-- [ ] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality / docs) + must-fix 반영 _(파일 감시 누수/캐시 무효화 집중)_
-- [ ] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
-- [ ] Step 4: 🧩 Integration Verification (`.md` 추가/삭제 실시간 반영 확인)
-- [ ] Step 5: 🔄 Regression Check
-- [ ] Step 6: 📐 Architecture Compliance
-- [ ] `docs/reviews/phase-17.md` 리뷰 리포트 저장
-- [ ] **Phase별 리뷰 트래커** P17 행 모두 체크
+- [x] Step 1: 🔍 Self Code Review 완료 (deinit Swift 6 위반 must-fix)
+- [x] Step 2: 👥 `/team` 멀티 리뷰 — must-fix 2건 반영 (DisplayTextSanitizer, deinit 제거), 2건 defer
+- [x] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
+- [x] Step 4: 🧩 Integration Verification (`.md` 추가/삭제 실시간 반영 확인)
+- [x] Step 5: 🔄 Regression Check (548 → 592, +44)
+- [x] Step 6: 📐 Architecture Compliance
+- [x] `docs/reviews/phase-17.md` 리뷰 리포트 저장
+- [x] **Phase별 리뷰 트래커** P17 행 모두 체크
 
 ---
 

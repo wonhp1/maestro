@@ -15,6 +15,9 @@ import SwiftUI
 /// `pendingDeletion` (confirm 대상) 과 `showingSettings` (시트 표시) 만.
 struct SidebarView: View {
     @Bindable var viewModel: FolderViewModel
+    /// Phase 12 — 폴더 행에 status badge / unread badge 표시. nil 이면 미표시 (Phase 10 호환).
+    var statusStore: AgentStatusStore?
+    var inboxStore: InboxStore?
     @State private var activeAlert: SidebarAlert?
     @State private var showingSettings: Bool = false
 
@@ -109,20 +112,24 @@ struct SidebarView: View {
                 emptyState
             } else {
                 ForEach(viewModel.folders) { folder in
-                    FolderRow(folder: folder)
-                        .tag(folder.id)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                activeAlert = .deleteConfirm(folder)
-                            } label: {
-                                Label("삭제", systemImage: "trash")
-                            }
-                            Button {
-                                showingSettings = true
-                            } label: {
-                                Label("설정...", systemImage: "gearshape")
-                            }
+                    FolderRow(
+                        folder: folder,
+                        status: statusStore?.status(for: folder.id),
+                        unreadCount: inboxStore?.unreadCount(folderID: folder.id) ?? 0
+                    )
+                    .tag(folder.id)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            activeAlert = .deleteConfirm(folder)
+                        } label: {
+                            Label("삭제", systemImage: "trash")
                         }
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Label("설정...", systemImage: "gearshape")
+                        }
+                    }
                 }
             }
         }
@@ -163,18 +170,34 @@ struct SidebarView: View {
     }
 }
 
-/// 사이드바 한 행.
+/// 사이드바 한 행 — 폴더 메타 + status badge + unread badge.
 private struct FolderRow: View {
     let folder: FolderRegistration
+    let status: AgentStatus?
+    let unreadCount: Int
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "folder.fill")
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text(folder.displayName)
-                    .font(.body)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(folder.displayName)
+                        .font(.body)
+                        .lineLimit(1)
+                    if let status {
+                        AgentStatusBadge(status: status)
+                    }
+                    if unreadCount > 0 {
+                        Text("\(unreadCount)")
+                            .font(.caption2.monospacedDigit())
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                }
                 HStack(spacing: 4) {
                     Text(folder.adapterId.rawValue)
                         .font(.caption2)
@@ -203,6 +226,6 @@ private struct FolderRow: View {
         picker: picker,
         defaultAdapterID: AdapterID(rawValue: "claude")
     )
-    return SidebarView(viewModel: vm)
+    return SidebarView(viewModel: vm, statusStore: nil, inboxStore: nil)
         .frame(width: 260, height: 400)
 }

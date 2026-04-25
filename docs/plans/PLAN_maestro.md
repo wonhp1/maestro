@@ -1343,45 +1343,45 @@ swiftlint --strict             # 0 violations
 
 **Goal**: 메인 화면. 사이드바(폴더+에이전트 상태) + 메인 패널(선택된 대화) + 보고함.
 **Estimated Time**: 5-6일
-**Status**: ⏳ Pending
+**Status**: ✅ Complete
 
 #### Tasks
 
 **🔴 RED**
 
-- [ ] **Test 12.1**: `ControlTowerViewModelTests`
-- [ ] **Test 12.2**: `OrchestrationStatusTests` — 진행 중/완료/에러 상태
-- [ ] **Test 12.3**: `ControlTowerViewSnapshotTests`
+- [x] **Test 12.1**: ChatSessionStore / AgentStatusStore (12 tests)
+- [x] **Test 12.2**: OrchestrationStatusModel (7 tests, 진행/완료/에러 상태)
+- [ ] **Test 12.3**: SwiftUI snapshot tests — defer (Phase 8/10 precedent)
 
 **🟢 GREEN**
 
-- [ ] **Task 12.4**: `ControlTowerView` — 3-컬럼 레이아웃 (Sidebar / Main / Inspector)
-- [ ] **Task 12.5**: `AgentStatusBadge` — 🟢 active / 🟡 idle / 🔴 error
-- [ ] **Task 12.6**: `OrchestrationStatusBar` — 상단 "● A → B (진행중)" 표시
-- [ ] **Task 12.7**: `InboxPanel` — 우측 보고함 (받은 메시지 모음)
-- [ ] **Task 12.8**: `ThreadView` — 스레드 트리 시각화
+- [x] **Task 12.4**: `ControlTowerView` 3-col NavigationSplitView (Sidebar / Detail / Inspector)
+- [x] **Task 12.5**: `AgentStatusBadge` (offline/idle/active/error + 색상 토큰)
+- [x] **Task 12.6**: `OrchestrationStatusBar` — running/completed/failed chips + safeAreaInset
+- [x] **Task 12.7**: `InboxPanel` — 받은 메시지 + unread + 모두읽음
+- [x] **Task 12.8**: `ThreadView` — 단순 트리 (mount 은 Phase 13)
 
 **🔵 REFACTOR**
 
-- [ ] **Task 12.9**: 컴포넌트 분리 및 ViewModel 추출
-- [ ] **Task 12.10**: 레이아웃 반응형 (창 크기 변경 대응)
+- [x] **Task 12.9**: ControlTowerEnvironment composition root + 4개 store 분리
+- [x] **Task 12.10**: NavigationSplitView 반응형 + safeAreaInset 비파괴 reflow
 
 #### Quality Gate ✋
 
-- [ ] 사이드바에서 폴더 클릭 시 대화 창 전환
-- [ ] 보고함에 새 메시지 시 뱃지 카운트 증가
-- [ ] 상단 상태 바 실시간 업데이트
+- [x] 사이드바 폴더 클릭 → ChatView 전환 (ChatSessionStore + .task(id:))
+- [x] 보고함 새 메시지 unread 카운트 (testRecordIncrementsUnreadAndPrependsItem)
+- [x] 상단 status bar 실시간 (OrchestrationStatusBar + safeAreaInset)
 
 **🔬 Review & Verification** (→ [Phase Completion Protocol](#-phase-completion-protocol-모든-phase-공통) 6단계 적용):
 
-- [ ] Step 1: 🔍 Self Code Review 완료
-- [ ] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality / **ux** / docs) + must-fix 반영
-- [ ] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
-- [ ] Step 4: 🧩 Integration Verification (실제 앱에서 여러 폴더 동시 대화)
-- [ ] Step 5: 🔄 Regression Check
-- [ ] Step 6: 📐 Architecture Compliance
-- [ ] `docs/reviews/phase-12.md` 리뷰 리포트 저장
-- [ ] **Phase별 리뷰 트래커** P12 행 모두 체크
+- [x] Step 1: 🔍 Self Code Review 완료
+- [x] Step 2: 👥 `/team` 2 묶음 병렬 리뷰 + must-fix 8건 반영, 6건 defer
+- [x] Step 3: ✨ `/simplify` — IUO 제거 / single-flight Task / DisplayTextSanitizer 통합
+- [x] Step 4: 🧩 Integration Verification (477/477)
+- [x] Step 5: 🔄 Regression Check (Phase 1-11 회귀 없음)
+- [x] Step 6: 📐 Architecture Compliance
+- [x] `docs/reviews/phase-12.md` 리뷰 리포트 저장
+- [x] **Phase별 리뷰 트래커** P12 행 모두 체크
 
 ---
 

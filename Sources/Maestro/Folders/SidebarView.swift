@@ -1,0 +1,208 @@
+import MaestroCore
+import SwiftUI
+
+/// 사이드바 — 등록된 폴더 목록 + "+ 폴더 추가" 버튼.
+///
+/// ## 책임
+/// - `FolderViewModel.folders` 를 List 로 표시
+/// - 각 행: 폴더 이름 + 어댑터 chip + lastUsedAt 상대 시간
+/// - 우클릭 / swipe → 삭제 confirm 다이얼로그
+/// - 하단 "+ 폴더 추가" 버튼 → `viewModel.addFolderViaPicker()`
+/// - ⌘, → 선택 폴더 설정 시트 열기
+///
+/// ## 상태 관리
+/// `@Bindable` 로 `FolderViewModel` 의 변경에 자동 반응. 추가 로컬 state 는
+/// `pendingDeletion` (confirm 대상) 과 `showingSettings` (시트 표시) 만.
+struct SidebarView: View {
+    @Bindable var viewModel: FolderViewModel
+    @State private var activeAlert: SidebarAlert?
+    @State private var showingSettings: Bool = false
+
+    /// **두 alert 동시 발생 (예: 삭제 confirm 표시 중 errorMessage 가 set) 시 SwiftUI
+    /// 가 두 번째를 silently drop** — UX must-fix. enum 으로 단일 alert 채널화.
+    private enum SidebarAlert: Identifiable {
+        case deleteConfirm(FolderRegistration)
+        case error(String)
+
+        var id: String {
+            switch self {
+            case .deleteConfirm(let folder): return "delete-\(folder.id.rawValue)"
+            case .error(let message): return "error-\(message.hashValue)"
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            folderList
+            Divider()
+            addButton
+        }
+        .frame(minWidth: 220)
+        .alert(item: $activeAlert) { alert in
+            switch alert {
+            case .deleteConfirm(let folder):
+                return Alert(
+                    title: Text("폴더 삭제"),
+                    message: Text("\(folder.displayName) 을(를) 목록에서 제거합니다. 디스크의 실제 폴더는 삭제되지 않습니다."),
+                    primaryButton: .destructive(Text("삭제")) {
+                        Task { await viewModel.deleteFolder(id: folder.id) }
+                    },
+                    secondaryButton: .cancel(Text("취소"))
+                )
+            case .error(let message):
+                return Alert(
+                    title: Text("오류"),
+                    message: Text(message),
+                    dismissButton: .cancel(Text("확인")) {
+                        viewModel.dismissError()
+                    }
+                )
+            }
+        }
+        .onChange(of: viewModel.errorMessage) { _, newValue in
+            // errorMessage 가 채워지면 alert 채널 통합 — 동시성 race 차단.
+            if let message = newValue {
+                activeAlert = .error(message)
+            }
+        }
+        .onDeleteCommand {
+            // 키보드 ⌫ — 선택된 폴더 삭제 confirm.
+            if let id = viewModel.selectedFolderID,
+               let folder = viewModel.folders.first(where: { $0.id == id }) {
+                activeAlert = .deleteConfirm(folder)
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            if let id = viewModel.selectedFolderID,
+               let folder = viewModel.folders.first(where: { $0.id == id }) {
+                FolderSettingsSheet(folder: folder, viewModel: viewModel) {
+                    showingSettings = false
+                }
+            }
+        }
+        .background(
+            // ⌘, 단축키 — 선택된 폴더의 설정 시트 열기. Hidden button 패턴.
+            Button("") {
+                if viewModel.selectedFolderID != nil {
+                    showingSettings = true
+                }
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+            .opacity(0)
+            .frame(width: 0, height: 0)
+        )
+    }
+
+    private var folderList: some View {
+        List(selection: Binding(
+            get: { viewModel.selectedFolderID },
+            set: { newValue in
+                guard let id = newValue else {
+                    viewModel.selectedFolderID = nil
+                    return
+                }
+                Task { await viewModel.select(id: id) }
+            }
+        )) {
+            if viewModel.folders.isEmpty {
+                emptyState
+            } else {
+                ForEach(viewModel.folders) { folder in
+                    FolderRow(folder: folder)
+                        .tag(folder.id)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                activeAlert = .deleteConfirm(folder)
+                            } label: {
+                                Label("삭제", systemImage: "trash")
+                            }
+                            Button {
+                                showingSettings = true
+                            } label: {
+                                Label("설정...", systemImage: "gearshape")
+                            }
+                        }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "folder.badge.plus")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("등록된 폴더가 없습니다.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("아래 + 버튼으로 폴더를 추가하세요.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    private var addButton: some View {
+        Button {
+            Task { await viewModel.addFolderViaPicker() }
+        } label: {
+            HStack {
+                Image(systemName: "plus.circle.fill")
+                Text("폴더 추가")
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+/// 사이드바 한 행.
+private struct FolderRow: View {
+    let folder: FolderRegistration
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.fill")
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(folder.displayName)
+                    .font(.body)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(folder.adapterId.rawValue)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                    if let last = folder.lastUsedAt {
+                        Text(last, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+#Preview {
+    let paths = AppSupportPaths(root: FileManager.default.temporaryDirectory)
+    let registry = FolderRegistry(paths: paths)
+    let picker = StubFolderPicker(results: [])
+    let vm = FolderViewModel(
+        registry: registry,
+        picker: picker,
+        defaultAdapterID: AdapterID(rawValue: "claude")
+    )
+    return SidebarView(viewModel: vm)
+        .frame(width: 260, height: 400)
+}

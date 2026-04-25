@@ -1,0 +1,172 @@
+import Foundation
+import Observation
+
+/// 사이드바를 driving 하는 ViewModel — 등록된 폴더 목록 + 선택 상태 + 추가/삭제 액션.
+///
+/// ## 책임
+/// - 부팅 시 `FolderRegistry.loadFromDisk()` 호출
+/// - 변경 이벤트 (added/removed/updated) 구독 → snapshot 갱신 → SwiftUI 자동 렌더
+/// - "+ 폴더 추가" 진입점 — `FolderPicking` 호출 후 registry 에 등록
+/// - 사용자 액션 (선택 / 삭제) 시 errorMessage 로 결과 전달
+///
+/// ## 동시성
+/// `@MainActor` — UI 와 같은 isolation. registry actor 는 await 로 호출.
+///
+/// ## 에러 처리
+/// 모든 사용자 가시 작업은 `errorMessage` 로 비동기 알림 (throws 하지 않음).
+/// SwiftUI alert 가 `.alert(isPresented:)` 로 구독.
+@MainActor
+@Observable
+public final class FolderViewModel {
+    public private(set) var folders: [FolderRegistration] = []
+    public var selectedFolderID: FolderID?
+    public private(set) var isLoading: Bool = false
+    public var errorMessage: String?
+
+    private let registry: FolderRegistry
+    private let picker: FolderPicking
+    private let defaultAdapterID: AdapterID
+    @ObservationIgnored
+    nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+
+    public init(
+        registry: FolderRegistry,
+        picker: FolderPicking,
+        defaultAdapterID: AdapterID
+    ) {
+        self.registry = registry
+        self.picker = picker
+        self.defaultAdapterID = defaultAdapterID
+    }
+
+    deinit {
+        observationTask?.cancel()
+    }
+
+    /// 첫 진입 시 호출 — 디스크 로드 + 변경 스트림 구독 시작.
+    public func bootstrap() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await registry.loadFromDisk()
+            folders = await registry.list()
+        } catch {
+            errorMessage = "폴더 목록 로드 실패: \(error.localizedDescription)"
+        }
+        startObserving()
+    }
+
+    private func startObserving() {
+        guard observationTask == nil else { return }
+        observationTask = Task { [weak self, registry] in
+            let stream = await registry.events()
+            for await _ in stream {
+                guard let self else { return }
+                let updated = await registry.list()
+                await MainActor.run {
+                    self.folders = updated
+                }
+            }
+        }
+    }
+
+    /// "+ 폴더 추가" 액션 — picker 호출 후 등록.
+    public func addFolderViaPicker() async {
+        do {
+            guard let url = try await picker.presentPicker(suggested: nil) else {
+                return  // 사용자 취소 — 정상.
+            }
+            let displayName = url.lastPathComponent
+            let registered = try await registry.add(
+                displayName: displayName,
+                path: url,
+                adapterId: defaultAdapterID
+            )
+            await refreshFolders()
+            selectedFolderID = registered.id
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// 폴더 삭제. UI 에서 이미 confirm 다이얼로그를 거친 후 호출 가정.
+    public func deleteFolder(id: FolderID) async {
+        let wasSelected = (selectedFolderID == id)
+        do {
+            try await registry.remove(id: id)
+            await refreshFolders()
+            if wasSelected {
+                selectedFolderID = folders.first?.id
+            }
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// 폴더 표시 이름 변경.
+    public func rename(id: FolderID, to newName: String) async {
+        do {
+            try await registry.update(id: id, displayName: newName)
+            await refreshFolders()
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// 폴더의 어댑터 변경 (설정 시트).
+    public func changeAdapter(id: FolderID, to adapterId: AdapterID) async {
+        do {
+            try await registry.update(id: id, adapterId: adapterId)
+            await refreshFolders()
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// 사용자가 사이드바에서 폴더 클릭 — lastUsedAt 기록 + 선택.
+    public func select(id: FolderID) async {
+        selectedFolderID = id
+        do {
+            try await registry.touch(id: id)
+            await refreshFolders()
+        } catch {
+            // touch 실패는 사용자 가시 에러 아님 — 로그만.
+            errorMessage = nil
+        }
+    }
+
+    /// 디스크/registry 와 UI 스냅샷 동기화. 액션 직후 일관성 보장 — events 스트림은
+    /// 외부 (다른 인스턴스) 변경을 위한 backup channel.
+    private func refreshFolders() async {
+        folders = await registry.list()
+    }
+
+    public func dismissError() {
+        errorMessage = nil
+    }
+
+    private func humanReadable(_ error: Error) -> String {
+        switch error {
+        case FolderRegistrationError.emptyDisplayName:
+            return "폴더 이름이 비어 있습니다."
+        case FolderRegistrationError.displayNameTooLong(let length):
+            return "폴더 이름이 너무 깁니다 (\(length)자, 최대 128자)."
+        case FolderRegistrationError.displayNameContainsControlCharacter:
+            return "폴더 이름에 제어 문자가 포함되어 있습니다."
+        case FolderRegistrationError.pathMustBeFileURL:
+            return "선택된 경로가 파일 URL 이 아닙니다."
+        case FolderRegistrationError.pathMustBeAbsolute:
+            return "선택된 경로가 절대 경로가 아닙니다."
+        case FolderRegistrationError.pathIsNotADirectory(let path):
+            return "선택된 경로가 디렉토리가 아닙니다: \(path)"
+        case FolderRegistryError.duplicatePath(let path):
+            return "이미 등록된 폴더입니다: \(path.path)"
+        case FolderRegistryError.duplicateID:
+            return "내부 오류: 폴더 ID 충돌."
+        case FolderRegistryError.notFound:
+            return "폴더를 찾을 수 없습니다."
+        default:
+            return error.localizedDescription
+        }
+    }
+}

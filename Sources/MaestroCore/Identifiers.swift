@@ -97,6 +97,7 @@ public enum ThreadTag {}
 public enum SessionTag {}
 public enum AgentTag {}
 public enum AdapterTag {}
+public enum FolderTag {}
 
 /// 메시지 봉투 식별자.
 public typealias EnvelopeID = Identifier<EnvelopeTag>
@@ -118,3 +119,9 @@ public typealias AgentID = Identifier<AgentTag>
 /// Phase 2 에서 phantom-typed 로 승격 (기존 `String` 에서) — 보안 리뷰에서 지적된
 /// "5번째 ID 공간" 으로 가장 자주 경계를 넘나듬.
 public typealias AdapterID = Identifier<AdapterTag>
+
+/// 사용자가 등록한 작업 폴더 식별자. UUID 기반.
+///
+/// `path` 와 분리된 stable identity — 사용자가 폴더를 옮겨도 (Phase 10 외 future)
+/// 동일 폴더로 인식 가능. 디스크 (`folders.json`) 와 inbox 디렉토리 이름의 키.
+public typealias FolderID = Identifier<FolderTag>

@@ -36,8 +36,10 @@ final class ControlAgentSystemPromptTests: XCTestCase {
 
     func testRelayToFormatExplained() {
         let prompt = ControlAgentSystemPrompt.build(agents: [])
-        XCTAssertTrue(prompt.contains("RELAY_TO: <agent-id>"))
-        XCTAssertTrue(prompt.contains("위임할 작업 내용"))
+        // 실제 ReplyParser 가 파싱하는 XML 포맷
+        XCTAssertTrue(prompt.contains("<RELAY_TO=agent-id>"))
+        XCTAssertTrue(prompt.contains("</RELAY_TO>"))
+        XCTAssertTrue(prompt.contains("REPLY_TO"))
     }
 }
 

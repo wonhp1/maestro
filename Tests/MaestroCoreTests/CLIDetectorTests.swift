@@ -229,7 +229,11 @@ private struct StubExecutor: ProcessExecuting {
         self.error = error
     }
 
-    func run(executable: URL, arguments: [String]) async throws -> ProcessOutput {
+    func run(
+        executable: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?
+    ) async throws -> ProcessOutput {
         if let error = error { throw error }
         return output!
     }

@@ -4,7 +4,20 @@ import Foundation
 ///
 /// 구체 구현은 `DefaultProcessExecutor`. 테스트는 stub 으로 교체.
 public protocol ProcessExecuting: Sendable {
-    func run(executable: URL, arguments: [String]) async throws -> ProcessOutput
+    /// - Parameter currentDirectoryURL: 자식 프로세스의 작업 디렉토리.
+    ///   `nil` 이면 호출 프로세스의 cwd 상속. Phase 7+ 어댑터는 프로젝트 폴더 지정 필수.
+    func run(
+        executable: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?
+    ) async throws -> ProcessOutput
+}
+
+public extension ProcessExecuting {
+    /// cwd 를 명시 안 하는 호출용 편의 — 호출 프로세스 cwd 상속.
+    func run(executable: URL, arguments: [String]) async throws -> ProcessOutput {
+        try await run(executable: executable, arguments: arguments, currentDirectoryURL: nil)
+    }
 }
 
 /// 프로세스 실행 결과. 비정상 exit 자체는 throws 가 아닌 `exitCode` 로 표현.
@@ -57,10 +70,17 @@ public struct DefaultProcessExecutor: ProcessExecuting {
         self.maxOutputBytes = maxOutputBytes
     }
 
-    public func run(executable: URL, arguments: [String]) async throws -> ProcessOutput {
+    public func run(
+        executable: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?
+    ) async throws -> ProcessOutput {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        if let cwd = currentDirectoryURL {
+            process.currentDirectoryURL = cwd
+        }
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe

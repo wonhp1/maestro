@@ -13,6 +13,7 @@ struct VendorPickerSheet: View {
     @Bindable var detectionViewModel: AdapterDetectionViewModel
 
     @State private var selectedAdapterID: String = ""
+    @State private var pendingInstallAdapterID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -31,7 +32,28 @@ struct VendorPickerSheet: View {
         .padding(20)
         .frame(width: 560)
         .task { await loadDetections() }
+        .sheet(item: Binding(
+            get: { pendingInstallAdapterID.map { InstallTarget(id: $0) } },
+            set: { newValue in pendingInstallAdapterID = newValue?.id }
+        )) { target in
+            AdapterInstallSheet(
+                adapterId: target.id,
+                displayName: detectionViewModel.displayName(for: target.id)
+            ) { success in
+                pendingInstallAdapterID = nil
+                if success {
+                    Task {
+                        await detectionViewModel.refresh()
+                        if detectionViewModel.detection(for: target.id)?.isInstalled == true {
+                            selectedAdapterID = target.id
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    private struct InstallTarget: Identifiable { let id: String }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -53,7 +75,8 @@ struct VendorPickerSheet: View {
                     displayName: detectionViewModel.displayName(for: adapterId),
                     detection: detectionViewModel.detection(for: adapterId),
                     isSelected: selectedAdapterID == adapterId,
-                    onSelect: { selectedAdapterID = adapterId }
+                    onSelect: { selectedAdapterID = adapterId },
+                    onRequestInstall: { pendingInstallAdapterID = adapterId }
                 )
             }
             if detectionViewModel.sortedAdapterIDs.isEmpty {
@@ -127,6 +150,7 @@ private struct AdapterRow: View {
     let detection: AdapterDetection?
     let isSelected: Bool
     let onSelect: () -> Void
+    let onRequestInstall: () -> Void
 
     var body: some View {
         Button(action: handleTap) {
@@ -177,16 +201,19 @@ private struct AdapterRow: View {
 
     @ViewBuilder
     private func installationHint(_ hint: InstallationHint) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(hint.description).font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 6) {
+                Button("자동 설치") { onRequestInstall() }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
                 Text(hint.command)
                     .font(.system(.caption, design: .monospaced))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 if let url = hint.docsURL {
-                    Link("설치 안내 →", destination: url)
+                    Link("도움말 →", destination: url)
                         .font(.caption)
                 }
             }

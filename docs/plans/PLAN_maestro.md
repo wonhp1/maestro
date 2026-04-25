@@ -263,31 +263,31 @@ Architecture Decisions 섹션 기준 준수 확인.
 
 각 Phase 완료 시 아래 표의 해당 행에 체크 표시. 6단계 모두 통과해야 해당 Phase "Complete" 로 마킹 가능.
 
-| Phase | 🔍 Self | 👥 /team | ✨ /simplify | 🧩 Integration | 🔄 Regression | 📐 Arch | 리뷰 리포트                                      |
-| ----- | :-----: | :------: | :----------: | :------------: | :-----------: | :-----: | :----------------------------------------------- |
-| P1    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-1.md](../reviews/phase-1.md) |
-| P2    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-2.md](../reviews/phase-2.md) |
-| P3    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-3.md](../reviews/phase-3.md) |
-| P4    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-4.md](../reviews/phase-4.md) |
-| P5    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-5.md](../reviews/phase-5.md) |
-| P6    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-6.md](../reviews/phase-6.md) |
-| P7    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-7.md](../reviews/phase-7.md) |
-| P8    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-8.md](../reviews/phase-8.md) |
-| P9    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-9.md](../reviews/phase-9.md) |
-| P10   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-10.md                         |
-| P11   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-11.md                         |
-| P12   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-12.md                         |
-| P13   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-13.md                         |
-| P14   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-14.md                         |
-| P15   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-15.md                         |
-| P16   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-16.md                         |
-| P17   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-17.md                         |
-| P18   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-18.md                         |
-| P19   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-19.md                         |
-| P20   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-20.md                         |
-| P21   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-21.md                         |
-| P22   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-22.md                         |
-| P23   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-23.md                         |
+| Phase | 🔍 Self | 👥 /team | ✨ /simplify | 🧩 Integration | 🔄 Regression | 📐 Arch | 리뷰 리포트                                        |
+| ----- | :-----: | :------: | :----------: | :------------: | :-----------: | :-----: | :------------------------------------------------- |
+| P1    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-1.md](../reviews/phase-1.md)   |
+| P2    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-2.md](../reviews/phase-2.md)   |
+| P3    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-3.md](../reviews/phase-3.md)   |
+| P4    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-4.md](../reviews/phase-4.md)   |
+| P5    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-5.md](../reviews/phase-5.md)   |
+| P6    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-6.md](../reviews/phase-6.md)   |
+| P7    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-7.md](../reviews/phase-7.md)   |
+| P8    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-8.md](../reviews/phase-8.md)   |
+| P9    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-9.md](../reviews/phase-9.md)   |
+| P10   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-10.md](../reviews/phase-10.md) |
+| P11   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-11.md](../reviews/phase-11.md) |
+| P12   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-12.md](../reviews/phase-12.md) |
+| P13   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-13.md](../reviews/phase-13.md) |
+| P14   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-14.md](../reviews/phase-14.md) |
+| P15   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-15.md](../reviews/phase-15.md) |
+| P16   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-16.md](../reviews/phase-16.md) |
+| P17   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-17.md                           |
+| P18   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-18.md                           |
+| P19   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-19.md                           |
+| P20   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-20.md                           |
+| P21   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-21.md                           |
+| P22   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-22.md                           |
+| P23   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-23.md                           |
 
 ### Phase 완료 순서 (권장)
 

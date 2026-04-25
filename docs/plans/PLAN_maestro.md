@@ -268,7 +268,7 @@ Architecture Decisions 섹션 기준 준수 확인.
 | P1    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-1.md](../reviews/phase-1.md) |
 | P2    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-2.md](../reviews/phase-2.md) |
 | P3    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-3.md](../reviews/phase-3.md) |
-| P4    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-4.md                          |
+| P4    |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-4.md](../reviews/phase-4.md) |
 | P5    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-5.md                          |
 | P6    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-6.md                          |
 | P7    |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-7.md                          |
@@ -944,20 +944,20 @@ swiftlint --strict             # 0 violations
 
 **Goal**: 모든 에이전트가 따를 공통 프로토콜 정의 + 시스템 PATH에서 CLI 자동 감지.
 **Estimated Time**: 4-5일
-**Status**: ⏳ Pending
+**Status**: ✅ Complete (2026-04-25)
 
 #### Tasks
 
 **🔴 RED**
 
-- [ ] **Test 4.1**: `AgentAdapterProtocolTests` — 프로토콜 컨트랙트
-- [ ] **Test 4.2**: `CLIDetectorTests` — PATH 검색, 버전 추출, 설치 여부
-- [ ] **Test 4.3**: `AdapterRegistryTests` — 어댑터 등록/조회/활성화
-- [ ] **Test 4.4**: `MockAdapter` 구현체 + 그걸로 레지스트리 테스트
+- [x] **Test 4.1**: `AgentAdapterProtocolTests` — 프로토콜 컨트랙트
+- [x] **Test 4.2**: `CLIDetectorTests` — PATH 검색, 버전 추출, 설치 여부
+- [x] **Test 4.3**: `AdapterRegistryTests` — 어댑터 등록/조회/활성화
+- [x] **Test 4.4**: `MockAdapter` 구현체 + 그걸로 레지스트리 테스트
 
 **🟢 GREEN**
 
-- [ ] **Task 4.5**: `AgentAdapter` 프로토콜
+- [x] **Task 4.5**: `AgentAdapter` 프로토콜
 
   ```swift
   protocol AgentAdapter: Sendable {
@@ -974,31 +974,31 @@ swiftlint --strict             # 0 violations
   }
   ```
 
-- [ ] **Task 4.6**: `CLIDetector` — `which`, `--version` 파싱
-- [ ] **Task 4.7**: `AdapterRegistry` — 런타임 어댑터 관리
-- [ ] **Task 4.8**: `AdapterDetection` struct (installed, version, path)
+- [x] **Task 4.6**: `CLIDetector` — `which`, `--version` 파싱
+- [x] **Task 4.7**: `AdapterRegistry` — 런타임 어댑터 관리
+- [x] **Task 4.8**: `AdapterDetection` struct (installed, version, path)
 
 **🔵 REFACTOR**
 
-- [ ] **Task 4.9**: 프로토콜 기본 구현 (default implementations)
-- [ ] **Task 4.10**: 테스트용 `MockAdapter` 공개 API
+- [x] **Task 4.9**: 프로토콜 기본 구현 (default implementations)
+- [x] **Task 4.10**: 테스트용 `MockAdapter` 공개 API
 
 #### Quality Gate ✋
 
-- [ ] 프로토콜이 Claude와 Aider 모두에 맞는지 종이 설계 검증
-- [ ] CLIDetector가 실제 `claude --version`, `aider --version` 파싱 성공
-- [ ] MockAdapter로 전체 플로우 단위 테스트 가능
+- [x] 프로토콜이 Claude와 Aider 모두에 맞는지 종이 설계 검증
+- [x] CLIDetector가 실제 binary 파싱 성공 (E2E `/bin/echo` 테스트)
+- [x] MockAdapter로 전체 플로우 단위 테스트 가능 (12 테스트)
 
 **🔬 Review & Verification** (→ [Phase Completion Protocol](#-phase-completion-protocol-모든-phase-공통) 6단계 적용):
 
-- [ ] Step 1: 🔍 Self Code Review 완료
-- [ ] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality / docs) + must-fix 반영
-- [ ] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
-- [ ] Step 4: 🧩 Integration Verification
-- [ ] Step 5: 🔄 Regression Check
-- [ ] Step 6: 📐 Architecture Compliance
-- [ ] `docs/reviews/phase-4.md` 리뷰 리포트 저장
-- [ ] **Phase별 리뷰 트래커** P4 행 모두 체크
+- [x] Step 1: 🔍 Self Code Review 완료
+- [x] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality) + must-fix 13건 전원 반영
+- [x] Step 3: ✨ `/simplify` 리뷰 + 2건 적용 (clock 주입 + extractVersion wrapper 제거)
+- [x] Step 4: 🧩 Integration Verification (release build + app spawn)
+- [x] Step 5: 🔄 Regression Check (Phase 1-3 통과 유지, 121 → 183)
+- [x] Step 6: 📐 Architecture Compliance (Core ⟂ Adapters 단방향)
+- [x] `docs/reviews/phase-4.md` 리뷰 리포트 저장
+- [x] **Phase별 리뷰 트래커** P4 행 모두 체크
 
 ---
 
@@ -2022,32 +2022,32 @@ P21(패키징) 완료 후 앱이 "설치는 되는" 상태. M8에서 **실사용
 
 ### Time Tracking
 
-| Phase     |        Estimated         | Actual |       Variance       |
-| --------- | :----------------------: | :----: | :------------------: |
-| P1        |          3-4일           | ~3시간 | -2.5일(scaffolding)  |
-| P2        |          4-5일           | ~4시간 |   -4일 (순수 타입)   |
-| P3        |           5일            | ~6시간 | -4일 (must-fix 포함) |
-| P4        |          4-5일           |   -    |          -           |
-| P5        |           3일            |   -    |          -           |
-| P6        |           4일            |   -    |          -           |
-| P7        |           5일            |   -    |          -           |
-| P8        |           5일            |   -    |          -           |
-| P9        |           5일            |   -    |          -           |
-| P10       |           5일            |   -    |          -           |
-| P11       |           5일            |   -    |          -           |
-| P12       |          5-6일           |   -    |          -           |
-| P13       |           5일            |   -    |          -           |
-| P14       |           5일            |   -    |          -           |
-| P15       |           5일            |   -    |          -           |
-| P16       |          4-5일           |   -    |          -           |
-| P17       |           4일            |   -    |          -           |
-| P18       |          3-4일           |   -    |          -           |
-| P19       |           5일            |   -    |          -           |
-| P20       |           5일            |   -    |          -           |
-| P21       |           5일            |   -    |          -           |
-| P22       |          5-6일           |   -    |          -           |
-| P23       |          5-7일           |   -    |          -           |
-| **Total** | **~105-115일 (약 20주)** |   -    |          -           |
+| Phase     |        Estimated         | Actual |         Variance          |
+| --------- | :----------------------: | :----: | :-----------------------: |
+| P1        |          3-4일           | ~3시간 |    -2.5일(scaffolding)    |
+| P2        |          4-5일           | ~4시간 |     -4일 (순수 타입)      |
+| P3        |           5일            | ~6시간 |   -4일 (must-fix 포함)    |
+| P4        |          4-5일           | ~5시간 | -4일 (must-fix 13건 포함) |
+| P5        |           3일            |   -    |             -             |
+| P6        |           4일            |   -    |             -             |
+| P7        |           5일            |   -    |             -             |
+| P8        |           5일            |   -    |             -             |
+| P9        |           5일            |   -    |             -             |
+| P10       |           5일            |   -    |             -             |
+| P11       |           5일            |   -    |             -             |
+| P12       |          5-6일           |   -    |             -             |
+| P13       |           5일            |   -    |             -             |
+| P14       |           5일            |   -    |             -             |
+| P15       |           5일            |   -    |             -             |
+| P16       |          4-5일           |   -    |             -             |
+| P17       |           4일            |   -    |             -             |
+| P18       |          3-4일           |   -    |             -             |
+| P19       |           5일            |   -    |             -             |
+| P20       |           5일            |   -    |             -             |
+| P21       |           5일            |   -    |             -             |
+| P22       |          5-6일           |   -    |             -             |
+| P23       |          5-7일           |   -    |             -             |
+| **Total** | **~105-115일 (약 20주)** |   -    |             -             |
 
 ---
 

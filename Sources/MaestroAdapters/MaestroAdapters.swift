@@ -1,17 +1,16 @@
 // MaestroAdapters — AI CLI 에이전트 어댑터 모듈.
 //
-// NEXT: Phase 4 에서 `AgentAdapter` 프로토콜로 대체 (PLAN §Phase 4).
-// NEXT: Phase 7 에서 Claude Adapter, Phase 9 에서 Aider Adapter 구현.
+// Phase 4: AgentAdapter 프로토콜 (in MaestroCore) + 본 모듈의 구현 유틸:
+// - CLIDetector / ExecutableLocating / ProcessExecuting: 어댑터 구현체가 사용하는 공통 도구
+// - MockAdapter: 테스트/UI 미리보기 전용 어댑터
 //
-// 현재는 모듈 자체의 존재성만 담당하는 scaffold. MaestroAdaptersTests 타겟도
-// Phase 4 에서 재도입 예정.
+// 후속 Phase:
+// - Phase 7: ClaudeAdapter
+// - Phase 9: AiderAdapter
 
 import MaestroCore
 
-/// Phase 1 scaffold — 모듈 존재성 확인용.
-///
-/// - Note: Phase 4 에서 `AgentAdapter` 프로토콜과 `AdapterRegistry` 로 대체됨.
+/// 모듈 메타데이터. 디버깅/로그 용도.
 public enum MaestroAdapters {
-    /// 모듈 식별자. 디버깅/로그용으로만 참조.
     public static let moduleName: String = "MaestroAdapters"
 }

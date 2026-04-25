@@ -54,7 +54,13 @@ let package = Package(
                 .swiftLanguageMode(.v6),
             ]
         ),
-        // MaestroAdaptersTests — Phase 4에서 AgentAdapter 프로토콜 도입과 함께 추가.
-        // Phase 1 에선 테스트할 의미있는 동작이 없어 타겟 선언도 제거.
+        .testTarget(
+            name: "MaestroAdaptersTests",
+            dependencies: ["MaestroCore", "MaestroAdapters"],
+            path: "Tests/MaestroAdaptersTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+            ]
+        ),
     ]
 )

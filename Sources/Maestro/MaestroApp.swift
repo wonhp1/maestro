@@ -13,8 +13,28 @@ import SwiftUI
 /// 앱 수명 유지.
 @main
 struct MaestroApp: App {
-    @State private var environment = ControlTowerEnvironment.makeProduction()
+    @State private var environment: ControlTowerEnvironment
     @State private var updateController = UpdateController()
+
+    init() {
+        // .app launch 시 PATH 보정: 사용자 로그인 쉘의 PATH 를 머지해서
+        // ~/.npm-global/bin, /opt/homebrew/bin 등 사용자 설치 CLI 가 발견되도록 함.
+        // **동기 대기 필요** — ControlTowerEnvironment.makeProduction() 이 CLI 감지를
+        // 시작하므로 PATH 가 먼저 setenv 되어야 race 가 없음.
+        // 1500ms 안에 못 끝내면 그냥 진행 — 사용자 ~/.zshrc 가 nvm/conda 등으로 무거운
+        // 케이스 대비. macOS app-launch hang 임계 (~4s) 의 1/3 만 점유.
+        // Extractor 자체 timeout 은 1.2s 로 살짝 더 짧게 설정 — semaphore wait 가 항상
+        // ProcessExecutor timeout 보다 길도록.
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached(priority: .userInitiated) {
+            _ = await EnvironmentAugmenter.augmentPATHFromLoginShell(
+                extractor: LoginShellPathExtractor(timeout: 1.2)
+            )
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + .milliseconds(1500))
+        _environment = State(wrappedValue: ControlTowerEnvironment.makeProduction())
+    }
 
     var body: some Scene {
         WindowGroup(

@@ -20,9 +20,14 @@ struct SidebarView: View {
     var inboxStore: InboxStore?
     /// Phase v0.4.3 — vendor picker sheet 가 사용. nil 이면 sheet 미표시 (구 호환).
     var adapterRegistry: AdapterRegistry?
+    /// Phase v0.4.3 — 토론 entry. 두 closure 가 nil 이면 토론 진입점 미표시.
+    var discussionStore: DiscussionStore?
+    var discussionStartViewModelFactory: (() -> DiscussionStartViewModel)?
     @State private var activeAlert: SidebarAlert?
     @State private var showingSettings: Bool = false
+    @State private var showingDiscussionStart: Bool = false
     @State private var detectionViewModel: AdapterDetectionViewModel?
+    @State private var pendingDiscussionStart: DiscussionStartViewModel?
 
     /// **두 alert 동시 발생 (예: 삭제 confirm 표시 중 errorMessage 가 set) 시 SwiftUI
     /// 가 두 번째를 silently drop** — UX must-fix. enum 으로 단일 alert 채널화.
@@ -43,6 +48,10 @@ struct SidebarView: View {
             folderList
             Divider()
             addButton
+            if discussionStore != nil, discussionStartViewModelFactory != nil {
+                Divider()
+                addDiscussionButton
+            }
         }
         .frame(minWidth: 220)
         .alert(item: $activeAlert) { alert in
@@ -200,6 +209,34 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var addDiscussionButton: some View {
+        Button {
+            guard let factory = discussionStartViewModelFactory else { return }
+            pendingDiscussionStart = factory()
+            showingDiscussionStart = true
+        } label: {
+            HStack {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .foregroundStyle(.purple)
+                Text("새 토론")
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .sheet(isPresented: $showingDiscussionStart) {
+            if let vm = pendingDiscussionStart {
+                DiscussionStartSheet(viewModel: vm) { _ in
+                    showingDiscussionStart = false
+                    pendingDiscussionStart = nil
+                }
+            }
+        }
     }
 }
 

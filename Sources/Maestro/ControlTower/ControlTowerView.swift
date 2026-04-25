@@ -26,7 +26,9 @@ struct ControlTowerView: View {
                     viewModel: viewModel,
                     statusStore: environment.statusStore,
                     inboxStore: environment.inboxStore,
-                    adapterRegistry: environment.adapterRegistry
+                    adapterRegistry: environment.adapterRegistry,
+                    discussionStore: environment.discussionStore,
+                    discussionStartViewModelFactory: { environment.makeDiscussionStartViewModel() }
                 )
             } else {
                 ProgressView("초기화 중…")
@@ -236,6 +238,8 @@ public final class ControlTowerEnvironment {
     public let adapterSelector: AdapterSelector?
     /// 등록된 모든 어댑터 — vendor picker 가 detect 호출에 사용 (Phase v0.4.3).
     public let adapterRegistry: AdapterRegistry
+    /// Phase v0.4.3 — 토론 store + UI 진입점.
+    public let discussionStore: DiscussionStore
     /// Control 메타 에이전트가 매 호출 시 fresh 폴더 목록 읽도록 하는 thread-safe snapshot (Phase 27).
     public let folderListSnapshot: FolderListSnapshot
     public internal(set) var detectedAdapterIDs: [String] = []
@@ -274,6 +278,7 @@ public final class ControlTowerEnvironment {
         apiKeyStorage: APIKeyStorage = APIKeyStorage(),
         adapterSelector: AdapterSelector? = nil,
         adapterRegistry: AdapterRegistry = AdapterRegistry(),
+        discussionStore: DiscussionStore = DiscussionStore(),
         folderListSnapshot: FolderListSnapshot = FolderListSnapshot()
     ) {
         self.pathsProvider = pathsProvider
@@ -299,6 +304,7 @@ public final class ControlTowerEnvironment {
         self.apiKeyStorage = apiKeyStorage
         self.adapterSelector = adapterSelector
         self.adapterRegistry = adapterRegistry
+        self.discussionStore = discussionStore
         self.folderListSnapshot = folderListSnapshot
         // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
         // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
@@ -310,6 +316,8 @@ public final class ControlTowerEnvironment {
         defer { pendingSlashInsertion = nil }
         return pendingSlashInsertion
     }
+
+    // 토론 진입점 메서드는 `ControlTowerEnvironment+Discussion.swift` 로 분리 (file_length).
 
     /// production 기본 환경 — NSOpenPanelFolderPicker + AdapterSelector (Phase 24).
     /// Control 폴더는 동적 system prompt 가 주입된 별도 ClaudeAdapter (Phase 27).
@@ -373,6 +381,7 @@ public final class ControlTowerEnvironment {
             },
             adapterSelector: selector,
             adapterRegistry: registry,
+            discussionStore: DiscussionStore(),
             folderListSnapshot: folderSnapshot
         )
     }

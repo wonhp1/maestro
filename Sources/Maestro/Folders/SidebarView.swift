@@ -18,8 +18,11 @@ struct SidebarView: View {
     /// Phase 12 — 폴더 행에 status badge / unread badge 표시. nil 이면 미표시 (Phase 10 호환).
     var statusStore: AgentStatusStore?
     var inboxStore: InboxStore?
+    /// Phase v0.4.3 — vendor picker sheet 가 사용. nil 이면 sheet 미표시 (구 호환).
+    var adapterRegistry: AdapterRegistry?
     @State private var activeAlert: SidebarAlert?
     @State private var showingSettings: Bool = false
+    @State private var detectionViewModel: AdapterDetectionViewModel?
 
     /// **두 alert 동시 발생 (예: 삭제 confirm 표시 중 errorMessage 가 set) 시 SwiftUI
     /// 가 두 번째를 silently drop** — UX must-fix. enum 으로 단일 alert 채널화.
@@ -79,9 +82,34 @@ struct SidebarView: View {
         .sheet(isPresented: $showingSettings) {
             if let id = viewModel.selectedFolderID,
                let folder = viewModel.folders.first(where: { $0.id == id }) {
-                FolderSettingsSheet(folder: folder, viewModel: viewModel) {
+                FolderSettingsSheet(
+                    folder: folder,
+                    viewModel: viewModel,
+                    detectionViewModel: detectionViewModel
+                ) {
                     showingSettings = false
                 }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.pendingFolderURL != nil },
+            set: { newValue in
+                if !newValue { viewModel.cancelPendingAdd() }
+            }
+        )) {
+            if let url = viewModel.pendingFolderURL,
+               let detection = detectionViewModel {
+                VendorPickerSheet(
+                    folderURL: url,
+                    folderViewModel: viewModel,
+                    detectionViewModel: detection
+                )
+            }
+        }
+        .task(id: adapterRegistry.map { ObjectIdentifier($0) }) {
+            // 첫 번째로 registry 가 들어왔을 때 detection VM 생성.
+            if detectionViewModel == nil, let registry = adapterRegistry {
+                detectionViewModel = AdapterDetectionViewModel(registry: registry)
             }
         }
         .background(

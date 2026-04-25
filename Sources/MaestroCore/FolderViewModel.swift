@@ -23,6 +23,11 @@ public final class FolderViewModel {
     public private(set) var isLoading: Bool = false
     public var errorMessage: String?
 
+    /// `addFolderViaPicker` 가 polder picker 결과를 받은 직후, vendor 선택을 사용자에게
+    /// 받기 위한 중간 상태. UI 가 이 값을 관찰해서 vendor sheet 를 띄움.
+    /// `confirmPendingAdd` 또는 `cancelPendingAdd` 로 nil 로 돌아감.
+    public var pendingFolderURL: URL?
+
     private let registry: FolderRegistry
     private let picker: FolderPicking
     private let defaultAdapterID: AdapterID
@@ -70,23 +75,41 @@ public final class FolderViewModel {
         }
     }
 
-    /// "+ 폴더 추가" 액션 — picker 호출 후 등록.
+    /// "+ 폴더 추가" 액션 — picker 호출 후 vendor 선택을 위해 `pendingFolderURL` set.
+    /// 실제 등록은 사용자가 vendor 를 고른 뒤 `confirmPendingAdd(adapterId:)` 호출.
     public func addFolderViaPicker() async {
         do {
             guard let url = try await picker.presentPicker(suggested: nil) else {
                 return  // 사용자 취소 — 정상.
             }
+            pendingFolderURL = url
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// vendor sheet 에서 사용자가 어댑터 선택 → 실제 registry 등록.
+    public func confirmPendingAdd(adapterId: AdapterID) async {
+        guard let url = pendingFolderURL else { return }
+        do {
             let displayName = url.lastPathComponent
             let registered = try await registry.add(
                 displayName: displayName,
                 path: url,
-                adapterId: defaultAdapterID
+                adapterId: adapterId
             )
             await refreshFolders()
             selectedFolderID = registered.id
+            pendingFolderURL = nil
         } catch {
             errorMessage = humanReadable(error)
+            pendingFolderURL = nil
         }
+    }
+
+    /// 사용자가 vendor sheet 를 취소 — pending 상태 클리어.
+    public func cancelPendingAdd() {
+        pendingFolderURL = nil
     }
 
     /// 폴더 삭제. UI 에서 이미 confirm 다이얼로그를 거친 후 호출 가정.

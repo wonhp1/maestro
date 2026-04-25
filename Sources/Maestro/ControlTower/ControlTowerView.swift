@@ -25,7 +25,8 @@ struct ControlTowerView: View {
                 SidebarView(
                     viewModel: viewModel,
                     statusStore: environment.statusStore,
-                    inboxStore: environment.inboxStore
+                    inboxStore: environment.inboxStore,
+                    adapterRegistry: environment.adapterRegistry
                 )
             } else {
                 ProgressView("초기화 중…")
@@ -233,6 +234,8 @@ public final class ControlTowerEnvironment {
     public let notificationService: NotificationService
     public let apiKeyStorage: APIKeyStorage
     public let adapterSelector: AdapterSelector?
+    /// 등록된 모든 어댑터 — vendor picker 가 detect 호출에 사용 (Phase v0.4.3).
+    public let adapterRegistry: AdapterRegistry
     /// Control 메타 에이전트가 매 호출 시 fresh 폴더 목록 읽도록 하는 thread-safe snapshot (Phase 27).
     public let folderListSnapshot: FolderListSnapshot
     public internal(set) var detectedAdapterIDs: [String] = []
@@ -270,6 +273,7 @@ public final class ControlTowerEnvironment {
         preferencesStore: PreferencesStore? = nil,
         apiKeyStorage: APIKeyStorage = APIKeyStorage(),
         adapterSelector: AdapterSelector? = nil,
+        adapterRegistry: AdapterRegistry = AdapterRegistry(),
         folderListSnapshot: FolderListSnapshot = FolderListSnapshot()
     ) {
         self.pathsProvider = pathsProvider
@@ -294,6 +298,7 @@ public final class ControlTowerEnvironment {
         self.notificationService = notificationService ?? NoopNotificationService()
         self.apiKeyStorage = apiKeyStorage
         self.adapterSelector = adapterSelector
+        self.adapterRegistry = adapterRegistry
         self.folderListSnapshot = folderListSnapshot
         // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
         // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
@@ -321,6 +326,19 @@ public final class ControlTowerEnvironment {
         }()
         let mock = MockAdapter()
         let selector = AdapterSelector(candidates: candidates, fallback: mock)
+        let registry = AdapterRegistry()
+        // 동기 register (race 차단) — actor.register 는 단순 dict 삽입이라 빠름.
+        // 사용자가 첫 launch 직후 "+ 폴더 추가" 를 눌러도 vendor picker 가 빈 상태로
+        // 뜨지 않도록 함.
+        let adaptersToRegister = Array(candidates.values)
+        let registerSemaphore = DispatchSemaphore(value: 0)
+        Task.detached { [registry] in
+            for adapter in adaptersToRegister {
+                _ = try? await registry.register(adapter)
+            }
+            registerSemaphore.signal()
+        }
+        _ = registerSemaphore.wait(timeout: .now() + .milliseconds(500))
         // Control agent 가 매 호출 시 fresh 폴더 목록을 읽도록 thread-safe snapshot.
         let folderSnapshot = FolderListSnapshot()
         let controlClaudeAdapter: ClaudeAdapter? = try? ClaudeAdapter(
@@ -354,6 +372,7 @@ public final class ControlTowerEnvironment {
                 return try ChatViewModel(adapter: adapter, session: session)
             },
             adapterSelector: selector,
+            adapterRegistry: registry,
             folderListSnapshot: folderSnapshot
         )
     }

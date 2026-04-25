@@ -9,22 +9,24 @@ struct FolderSettingsSheet: View {
     @Bindable var viewModel: FolderViewModel
     let dismiss: () -> Void
 
+    /// 어댑터 감지 VM — 있으면 라이브 목록 사용, 없으면 폴더 자신의 어댑터만 표시 (테스트/preview).
+    var detectionViewModel: AdapterDetectionViewModel?
+
     @State private var displayName: String
     @State private var adapterId: String
-    @State private var availableAdapters: [String]
 
     init(
         folder: FolderRegistration,
         viewModel: FolderViewModel,
-        availableAdapters: [String] = ["claude", "aider"],
+        detectionViewModel: AdapterDetectionViewModel? = nil,
         dismiss: @escaping () -> Void
     ) {
         self.folder = folder
         self.viewModel = viewModel
+        self.detectionViewModel = detectionViewModel
         self.dismiss = dismiss
         _displayName = State(initialValue: folder.displayName)
         _adapterId = State(initialValue: folder.adapterId.rawValue)
-        _availableAdapters = State(initialValue: availableAdapters)
     }
 
     var body: some View {
@@ -47,11 +49,15 @@ struct FolderSettingsSheet: View {
 
                 Picker("기본 어댑터", selection: $adapterId) {
                     ForEach(availableAdapters, id: \.self) { id in
-                        Text(id).tag(id)
+                        Text(adapterDisplayName(for: id)).tag(id)
                     }
                 }
             }
             .formStyle(.grouped)
+
+            if let hint = currentAdapterHint {
+                hintRow(hint)
+            }
 
             HStack {
                 Spacer()
@@ -67,6 +73,46 @@ struct FolderSettingsSheet: View {
         }
         .padding(20)
         .frame(width: 520)
+        .task { await detectionViewModel?.refresh() }
+    }
+
+    private var availableAdapters: [String] {
+        if let detection = detectionViewModel, !detection.sortedAdapterIDs.isEmpty {
+            return detection.sortedAdapterIDs
+        }
+        // Fallback — registry 미주입 시 현재 어댑터만 노출 (변경 불가 효과).
+        return [folder.adapterId.rawValue]
+    }
+
+    private func adapterDisplayName(for adapterId: String) -> String {
+        detectionViewModel?.displayName(for: adapterId) ?? adapterId
+    }
+
+    private var currentAdapterHint: InstallationHint? {
+        guard let detection = detectionViewModel?.detection(for: adapterId),
+              !detection.isInstalled else {
+            return nil
+        }
+        return AdapterDetectionViewModel.installationHint(for: adapterId)
+    }
+
+    @ViewBuilder
+    private func hintRow(_ hint: InstallationHint) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(hint.description).font(.callout)
+                Text(hint.command)
+                    .font(.system(.caption, design: .monospaced))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var hasChanges: Bool {

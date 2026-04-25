@@ -58,6 +58,9 @@ final class FolderViewModelTests: XCTestCase {
         await vm.bootstrap()
 
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
 
         XCTAssertEqual(vm.folders.count, 1)
         XCTAssertEqual(vm.folders.first?.displayName, dir.lastPathComponent)
@@ -71,6 +74,9 @@ final class FolderViewModelTests: XCTestCase {
         await vm.bootstrap()
 
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
 
         XCTAssertTrue(vm.folders.isEmpty)
         XCTAssertNil(vm.errorMessage)
@@ -83,7 +89,13 @@ final class FolderViewModelTests: XCTestCase {
         await vm.bootstrap()
 
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
 
         XCTAssertEqual(vm.folders.count, 1)
         XCTAssertNotNil(vm.errorMessage)
@@ -98,6 +110,9 @@ final class FolderViewModelTests: XCTestCase {
         let vm = makeViewModel(picker: picker)
         await vm.bootstrap()
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         let id = try XCTUnwrap(vm.folders.first?.id)
 
         await vm.deleteFolder(id: id)
@@ -112,7 +127,13 @@ final class FolderViewModelTests: XCTestCase {
         let vm = makeViewModel(picker: picker)
         await vm.bootstrap()
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         let secondID = try XCTUnwrap(vm.folders.last?.id)
         let firstID = try XCTUnwrap(vm.folders.first?.id)
         vm.selectedFolderID = secondID
@@ -127,6 +148,9 @@ final class FolderViewModelTests: XCTestCase {
         let vm = makeViewModel(picker: picker)
         await vm.bootstrap()
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         let id = try XCTUnwrap(vm.folders.first?.id)
 
         await vm.rename(id: id, to: "New Name")
@@ -141,6 +165,9 @@ final class FolderViewModelTests: XCTestCase {
         let vm = makeViewModel(picker: picker)
         await vm.bootstrap()
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         let id = try XCTUnwrap(vm.folders.first?.id)
 
         await vm.changeAdapter(id: id, to: AdapterID(rawValue: "aider"))
@@ -154,6 +181,9 @@ final class FolderViewModelTests: XCTestCase {
         let vm = makeViewModel(picker: picker)
         await vm.bootstrap()
         await vm.addFolderViaPicker()
+        if vm.pendingFolderURL != nil {
+            await vm.confirmPendingAdd(adapterId: AdapterID(rawValue: "claude"))
+        }
         let id = try XCTUnwrap(vm.folders.first?.id)
         vm.selectedFolderID = nil
 

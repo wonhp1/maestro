@@ -30,10 +30,16 @@ struct ControlTowerView: View {
             }
         } content: {
             detailContent
-                // status bar 를 detail safe-area 상단에 고정 — VStack 외부 reflow 방지
-                // (must-fix B2). 빈 상태에서도 레이아웃 jump 없음.
                 .safeAreaInset(edge: .top, spacing: 0) {
                     OrchestrationStatusBar(model: environment.orchestrationStatus)
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if let folderViewModel = environment.folderViewModel,
+                       !folderViewModel.folders.isEmpty {
+                        DispatchComposer(folderViewModel: folderViewModel) { folder, body in
+                            await environment.sendDispatch(to: folder, body: body)
+                        }
+                    }
                 }
         } detail: {
             InboxPanel(
@@ -135,11 +141,14 @@ public final class ControlTowerEnvironment {
     public let orchestrationStatus: OrchestrationStatusModel
     public let chatSessionStore: ChatSessionStore
     public private(set) var folderViewModel: FolderViewModel?
+    public private(set) var dispatchService: DispatchService?
 
     @ObservationIgnored
     private let pathsProvider: () throws -> AppSupportPaths
     @ObservationIgnored
     private let pickerFactory: @MainActor () -> FolderPicking
+    @ObservationIgnored
+    private let envelopeStorage: EnvelopeStorage = EnvelopeStorage()
 
     public init(
         pathsProvider: @escaping () throws -> AppSupportPaths,
@@ -155,14 +164,13 @@ public final class ControlTowerEnvironment {
         self.statusStore = statusStore
         self.inboxStore = inboxStore
         self.orchestrationStatus = orchestrationStatus
-        // ChatSessionStore 를 init 에서 직접 초기화 — IUO 제거 (must-fix A1).
         self.chatSessionStore = ChatSessionStore(
             factory: chatViewModelFactory,
             statusStore: statusStore
         )
     }
 
-    /// production 기본 환경 — NSOpenPanelFolderPicker + MockAdapter (Phase 13 에서 실제 어댑터 wiring).
+    /// production 기본 환경 — NSOpenPanelFolderPicker + MockAdapter (Phase 14+ 에서 실제 어댑터 wiring).
     public static func makeProduction() -> ControlTowerEnvironment {
         ControlTowerEnvironment(
             pathsProvider: { try AppSupportPaths.forApplication() },
@@ -173,6 +181,22 @@ public final class ControlTowerEnvironment {
                 return try ChatViewModel(adapter: adapter, session: session)
             }
         )
+    }
+
+    /// UI 의 "보내기" 액션을 DispatchService 로 전달.
+    /// dispatch 시작 전에 ChatSessionStore 가 해당 폴더의 세션을 ensure 함 — 첫 dispatch 도 동작.
+    public func sendDispatch(to folder: FolderRegistration, body: String) async {
+        _ = await chatSessionStore.ensureSession(for: folder)
+        guard let dispatchService else { return }
+        let from = AgentID(rawValue: "control")
+        let to = ControlTowerEnvironment.syntheticAgentID(for: folder.id)
+        do {
+            _ = try await dispatchService.dispatch(
+                from: from, to: to, body: body, expectReply: true
+            )
+        } catch {
+            // observer 가 statusStore 에 error 기록 — UI 가 자동 surface.
+        }
     }
 
     public func bootstrap() async {
@@ -188,8 +212,92 @@ public final class ControlTowerEnvironment {
             )
             self.folderViewModel = viewModel
             await viewModel.bootstrap()
+            await wireDispatchService(paths: paths, folderViewModel: viewModel)
         } catch {
             self.folderViewModel = nil
         }
+    }
+
+    /// DispatchService 를 wiring — Phase 13.
+    /// 합성 AgentID = "folder-<id.rawValue>" — Phase 14+ 에서 FolderRegistration.agentId 도입 시 교체.
+    private func wireDispatchService(
+        paths: AppSupportPaths,
+        folderViewModel: FolderViewModel
+    ) async {
+        let logger = ThreadLogger(paths: paths)
+        let resolver = ChatSessionAgentResolver(
+            sessionStore: chatSessionStore,
+            folderViewModel: folderViewModel
+        )
+        let router = EnvelopeRouter(
+            paths: paths,
+            storage: envelopeStorage,
+            logger: logger,
+            resolver: resolver
+        )
+        let observer = ControlTowerDispatchObserver(
+            orchestrationStatus: orchestrationStatus,
+            agentStatus: statusStore,
+            inbox: inboxStore,
+            agentToFolder: { [weak folderViewModel] agentID in
+                guard let folderViewModel else { return nil }
+                return await MainActor.run {
+                    folderViewModel.folders.first { folder in
+                        Maestro.syntheticAgentID(for: folder.id) == agentID
+                    }?.id
+                }
+            }
+        )
+        self.dispatchService = DispatchService(
+            router: router,
+            resolver: resolver,
+            observer: observer
+        )
+    }
+}
+
+/// 폴더에 대한 합성 AgentID 생성.
+/// FolderID rawValue 가 UUID 형식 — Identifier.validated 통과 보장.
+/// nonisolated — closure 에서 자유롭게 호출 가능.
+func syntheticAgentID(for folderID: FolderID) -> AgentID {
+    let raw = "agent-\(folderID.rawValue.lowercased())"
+    return (try? AgentID.validated(rawValue: raw)) ?? AgentID(rawValue: raw)
+}
+
+extension ControlTowerEnvironment {
+    /// 외부 노출 wrapper — 같은 매핑.
+    public static func syntheticAgentID(for folderID: FolderID) -> AgentID {
+        Maestro.syntheticAgentID(for: folderID)
+    }
+}
+
+/// `AgentResolving` production — ChatSessionStore 의 캐시된 ChatViewModel 에서 어댑터/세션 회수.
+/// **자동 ensureSession** — 캐시 miss 시 세션 생성. 한 번도 열지 않은 폴더에 대한
+/// 릴레이 dispatch 가 silently DLQ 로 가는 것 방어 (must-fix HIGH-4).
+@MainActor
+private final class ChatSessionAgentResolver: AgentResolving {
+    private let sessionStore: ChatSessionStore
+    private let folderViewModel: FolderViewModel
+
+    init(sessionStore: ChatSessionStore, folderViewModel: FolderViewModel) {
+        self.sessionStore = sessionStore
+        self.folderViewModel = folderViewModel
+    }
+
+    nonisolated func resolve(agent: AgentID) async throws -> ResolvedAgent {
+        let folder: FolderRegistration? = await MainActor.run {
+            self.folderViewModel.folders.first { folder in
+                ControlTowerEnvironment.syntheticAgentID(for: folder.id) == agent
+            }
+        }
+        guard let folder else {
+            throw AgentResolverError.unknownAgent(id: agent)
+        }
+        // 캐시 miss → 자동 ensureSession (relay 가 미열린 폴더로 dispatch 시 보장)
+        let viewModel = await sessionStore.ensureSession(for: folder)
+        guard let viewModel else {
+            throw AgentResolverError.unknownAgent(id: agent)
+        }
+        return ResolvedAgent(adapter: viewModel.adapter, session: viewModel.session)
     }
 }

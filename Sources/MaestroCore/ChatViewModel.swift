@@ -27,8 +27,10 @@ public final class ChatViewModel {
     /// 직전 스트림이 *실패* 했을 때의 사용자 메시지. 사용자 취소는 lastError 에 안 잡힘.
     public private(set) var lastError: String?
 
-    private let adapter: any AgentAdapter
-    private let session: Session
+    /// Phase 13 — DispatchService 가 adapter/session 회수 필요.
+    /// nonisolated read 안전 (immutable + Sendable AgentAdapter / Session).
+    nonisolated public let adapter: any AgentAdapter
+    nonisolated public let session: Session
     private let userAgentId: AgentID
     private let assistantAgentId: AgentID
     private var streamingTask: Task<Void, Never>?

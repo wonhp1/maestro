@@ -13,6 +13,13 @@ public actor ControlTowerDispatchObserver: DispatchObserving {
     /// Phase v0.4.6 — dispatch 완료 시 호출. ControlTowerEnvironment 가 양쪽 폴더의
     /// ChatViewModel 에 incoming 메시지 / 자식 응답을 주입하여 채팅에 표시.
     private let onDispatchSettled: @Sendable (MessageEnvelope, MessageEnvelope) async -> Void
+    /// Phase v0.4.6 — 자식 RELAY 응답 한 건 도착 → parent 의 ChatViewModel 에 follow-up 표시.
+    private let onRelayResult: @Sendable (
+        _ parentEnvelope: MessageEnvelope,
+        _ parentReply: MessageEnvelope,
+        _ relayRequest: MessageEnvelope,
+        _ relayReply: MessageEnvelope
+    ) async -> Void
 
     public init(
         orchestrationStatus: OrchestrationStatusModel,
@@ -20,13 +27,26 @@ public actor ControlTowerDispatchObserver: DispatchObserving {
         inbox: InboxStore,
         agentToFolder: @escaping @Sendable (AgentID) async -> FolderID?,
         onDispatchSettled: @escaping @Sendable (MessageEnvelope, MessageEnvelope) async -> Void
-            = { _, _ in }
+            = { _, _ in },
+        onRelayResult: @escaping @Sendable (
+            MessageEnvelope, MessageEnvelope, MessageEnvelope, MessageEnvelope
+        ) async -> Void = { _, _, _, _ in }
     ) {
         self.orchestrationStatus = orchestrationStatus
         self.agentStatus = agentStatus
         self.inbox = inbox
         self.agentToFolder = agentToFolder
         self.onDispatchSettled = onDispatchSettled
+        self.onRelayResult = onRelayResult
+    }
+
+    public func relayResultArrived(
+        parentEnvelope: MessageEnvelope,
+        parentReply: MessageEnvelope,
+        relayRequest: MessageEnvelope,
+        relayReply: MessageEnvelope
+    ) async {
+        await onRelayResult(parentEnvelope, parentReply, relayRequest, relayReply)
     }
 
     public func dispatchStarted(envelope: MessageEnvelope) async {

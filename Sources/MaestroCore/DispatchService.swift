@@ -115,11 +115,12 @@ public actor DispatchService {
         await observer.dispatchCompleted(envelope: envelope, reply: reply)
         await observer.replyReceived(reply: reply, sourceFolderHint: nil)
 
-        // 4. RELAY_TO 처리 — depth cap 안에서 재귀 dispatch
+        // 4. RELAY_TO 처리 — depth cap 안에서 재귀 dispatch.
+        // v0.4.6: expectReply: true 로 변경 + observer 에 결과 통지 → parent 의
+        // ChatView 에 자식 응답이 follow-up 으로 표시됨.
         let parsed = parser.parse(reply.body)
         if !parsed.relays.isEmpty, relayDepth < maxRelayDepth {
             for relay in parsed.relays {
-                // 알 수 없는 에이전트는 skip — observer 에 알림
                 guard (try? await resolver.resolve(agent: relay.target)) != nil else {
                     await observer.relaySkipped(
                         from: reply.from, to: relay.target,
@@ -127,7 +128,6 @@ public actor DispatchService {
                     )
                     continue
                 }
-                // relay body 도 sanitize — 중첩 인젝션 방어 (must-fix HIGH-3)
                 let safeRelayBody = sanitizeOutgoingBody(relay.body)
                 let relayEnvelope = MessageEnvelope.task(
                     from: reply.from,
@@ -135,11 +135,19 @@ public actor DispatchService {
                     body: safeRelayBody,
                     thread: envelope.threadId
                 )
-                _ = try? await dispatchInternal(
+                let relayReply = try? await dispatchInternal(
                     envelope: relayEnvelope,
-                    expectReply: false,
+                    expectReply: true,
                     relayDepth: relayDepth + 1
                 )
+                if let relayReply {
+                    await observer.relayResultArrived(
+                        parentEnvelope: envelope,
+                        parentReply: reply,
+                        relayRequest: relayEnvelope,
+                        relayReply: relayReply
+                    )
+                }
             }
         }
 
@@ -183,6 +191,25 @@ public protocol DispatchObserving: Sendable {
     func dispatchTimedOut(envelope: MessageEnvelope) async
     func replyReceived(reply: MessageEnvelope, sourceFolderHint: FolderID?) async
     func relaySkipped(from: AgentID, to: AgentID, reason: String) async
+    /// Phase v0.4.6 — RELAY_TO 자식 응답 한 건 도착. parent 의 ChatViewModel 에
+    /// follow-up 으로 표시할 수 있게 노출. 기본 구현 no-op.
+    func relayResultArrived(
+        parentEnvelope: MessageEnvelope,
+        parentReply: MessageEnvelope,
+        relayRequest: MessageEnvelope,
+        relayReply: MessageEnvelope
+    ) async
+}
+
+public extension DispatchObserving {
+    func relayResultArrived(
+        parentEnvelope: MessageEnvelope,
+        parentReply: MessageEnvelope,
+        relayRequest: MessageEnvelope,
+        relayReply: MessageEnvelope
+    ) async {
+        // default no-op — 기존 observer 호환
+    }
 }
 
 /// 테스트용 noop / 카운팅 observer.

@@ -259,7 +259,7 @@ public final class ControlTowerEnvironment {
     /// bootstrap() 후 set — 실제 디스크 경로로 생성. 그 전엔 nil.
     public private(set) var preferencesStore: PreferencesStore?
     public private(set) var folderViewModel: FolderViewModel?
-    public private(set) var dispatchService: DispatchService?
+    public internal(set) var dispatchService: DispatchService?
     public internal(set) var pendingSlashInsertion: String?
     public private(set) var resolvedPaths: AppSupportPaths?
     /// `MaestroApp` 가 메인 윈도우에 onboarding sheet 띄울지 여부.
@@ -270,7 +270,7 @@ public final class ControlTowerEnvironment {
     @ObservationIgnored
     private let pickerFactory: @MainActor () -> FolderPicking
     @ObservationIgnored
-    private let envelopeStorage: EnvelopeStorage = EnvelopeStorage()
+    let envelopeStorage: EnvelopeStorage = EnvelopeStorage()
     @ObservationIgnored
     var slashCommandWatcher: SlashCommandWatcher?
     @ObservationIgnored
@@ -461,61 +461,7 @@ public final class ControlTowerEnvironment {
         }
     }
 
-    /// DispatchService 를 wiring — Phase 13.
-    /// 합성 AgentID = "folder-<id.rawValue>" — Phase 14+ 에서 FolderRegistration.agentId 도입 시 교체.
-    private func wireDispatchService(
-        paths: AppSupportPaths,
-        folderViewModel: FolderViewModel
-    ) async {
-        let logger = ThreadLogger(paths: paths)
-        let resolver = ChatSessionAgentResolver(
-            sessionStore: chatSessionStore,
-            folderViewModel: folderViewModel
-        )
-        let router = EnvelopeRouter(
-            paths: paths,
-            storage: envelopeStorage,
-            logger: logger,
-            resolver: resolver
-        )
-        let observer = ControlTowerDispatchObserver(
-            orchestrationStatus: orchestrationStatus,
-            agentStatus: statusStore,
-            inbox: inboxStore,
-            agentToFolder: { [weak folderViewModel] agentID in
-                guard let folderViewModel else { return nil }
-                return await MainActor.run {
-                    folderViewModel.folders.first { folder in
-                        Maestro.syntheticAgentID(for: folder.id) == agentID
-                    }?.id
-                }
-            },
-            onDispatchSettled: { [weak chatSessionStore = self.chatSessionStore, weak folderViewModel] envelope, reply in
-                // 자식 폴더 ChatViewModel 에 dispatch 표시 — recipient (envelope.to) 의
-                // 폴더 ChatView 에 user 메시지 + 자기 응답으로 append.
-                guard let store = chatSessionStore, let folderViewModel else { return }
-                await MainActor.run {
-                    let folder = folderViewModel.folders.first { folder in
-                        Maestro.syntheticAgentID(for: folder.id) == envelope.to
-                    }
-                    guard let folder else { return }
-                    let chatVM = store.cached(for: folder.id)
-                    let senderLabel = folderViewModel.folders.first { folder in
-                        Maestro.syntheticAgentID(for: folder.id) == envelope.from
-                    }?.displayName ?? envelope.from.rawValue
-                    chatVM?.injectIncomingDispatch(
-                        request: envelope, reply: reply,
-                        requestSenderLabel: senderLabel
-                    )
-                }
-            }
-        )
-        self.dispatchService = DispatchService(
-            router: router,
-            resolver: resolver,
-            observer: observer
-        )
-    }
+    // wireDispatchService 는 ControlTowerEnvironment+Dispatch.swift 로 이전 (file_length).
 }
 
 /// 폴더에 대한 합성 AgentID 생성.
@@ -537,7 +483,7 @@ extension ControlTowerEnvironment {
 /// **자동 ensureSession** — 캐시 miss 시 세션 생성. 한 번도 열지 않은 폴더에 대한
 /// 릴레이 dispatch 가 silently DLQ 로 가는 것 방어 (must-fix HIGH-4).
 @MainActor
-private final class ChatSessionAgentResolver: AgentResolving {
+final class ChatSessionAgentResolver: AgentResolving {
     private let sessionStore: ChatSessionStore
     private let folderViewModel: FolderViewModel
 

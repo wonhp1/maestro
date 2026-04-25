@@ -79,6 +79,19 @@ public final class ChatViewModel {
         lastError = nil
     }
 
+    /// 부모 (control 등) 의 ChatView 에 자식 RELAY 응답 한 건을 follow-up assistant
+    /// 메시지로 append. v0.4.6 멀티턴 루프.
+    /// - Parameters:
+    ///   - from: 자식 에이전트 표시 이름 (예: "CFO")
+    ///   - body: 자식의 응답 본문 — RELAY/REPLY 태그 포함될 수 있음 (UI 가 strip)
+    public func appendRelayResult(from: String, body: String) {
+        let formatted = "✓ **\(from)**: \(body)"
+        var message = ChatMessage.assistantPlaceholder()
+        message.content = formatted
+        message.status = .complete
+        messages.append(message)
+    }
+
     /// orchestration 시스템 (DispatchService → observer) 가 자식 폴더의 ChatViewModel
     /// 에 메시지를 표시할 때 호출. 사용자 입력 → adapter 응답 사이클이 외부에서 끝났으므로
     /// 두 메시지 (request 본문 = user role / reply 본문 = assistant role) 를 즉시 append.

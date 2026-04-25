@@ -28,7 +28,8 @@ struct ControlTowerView: View {
                     inboxStore: environment.inboxStore,
                     adapterRegistry: environment.adapterRegistry,
                     discussionStore: environment.discussionStore,
-                    discussionStartViewModelFactory: { environment.makeDiscussionStartViewModel() }
+                    discussionStartViewModelFactory: { environment.makeDiscussionStartViewModel() },
+                    selectedDiscussionID: $environment.selectedDiscussionID
                 )
             } else {
                 ProgressView("초기화 중…")
@@ -146,6 +147,16 @@ struct ControlTowerView: View {
 
     @ViewBuilder
     private var detailContent: some View {
+        if let discussionID = environment.selectedDiscussionID,
+           let discussionVM = environment.discussionStore.get(id: discussionID) {
+            DiscussionDetailView(viewModel: discussionVM, onInterrupt: nil)
+        } else {
+            folderDetailContent
+        }
+    }
+
+    @ViewBuilder
+    private var folderDetailContent: some View {
         if let viewModel = environment.folderViewModel,
            let id = viewModel.selectedFolderID,
            let folder = viewModel.folders.first(where: { $0.id == id }) {
@@ -243,6 +254,8 @@ public final class ControlTowerEnvironment {
     /// Control 메타 에이전트가 매 호출 시 fresh 폴더 목록 읽도록 하는 thread-safe snapshot (Phase 27).
     public let folderListSnapshot: FolderListSnapshot
     public internal(set) var detectedAdapterIDs: [String] = []
+    /// Phase v0.4.3 — 사용자가 사이드바에서 선택한 토론 (있을 때 detail 전환).
+    public var selectedDiscussionID: ThreadID?
     /// bootstrap() 후 set — 실제 디스크 경로로 생성. 그 전엔 nil.
     public private(set) var preferencesStore: PreferencesStore?
     public private(set) var folderViewModel: FolderViewModel?

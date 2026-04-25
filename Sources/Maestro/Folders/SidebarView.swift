@@ -23,6 +23,8 @@ struct SidebarView: View {
     /// Phase v0.4.3 — 토론 entry. 두 closure 가 nil 이면 토론 진입점 미표시.
     var discussionStore: DiscussionStore?
     var discussionStartViewModelFactory: (() -> DiscussionStartViewModel)?
+    /// Phase v0.4.3 — 토론 선택 binding. 사용자가 토론을 선택하면 detail 이 전환됨.
+    var selectedDiscussionID: Binding<ThreadID?> = .constant(nil)
     @State private var activeAlert: SidebarAlert?
     @State private var showingSettings: Bool = false
     @State private var showingDiscussionStart: Bool = false
@@ -46,6 +48,10 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             folderList
+            if let store = discussionStore, !store.orderedViewModels.isEmpty {
+                Divider()
+                discussionSection(store: store)
+            }
             Divider()
             addButton
             if discussionStore != nil, discussionStartViewModelFactory != nil {
@@ -209,6 +215,12 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    @ViewBuilder
+    private func discussionSection(store: DiscussionStore) -> some View {
+        DiscussionListView(store: store, selectedID: selectedDiscussionID)
+            .frame(maxHeight: 240)
     }
 
     private var addDiscussionButton: some View {

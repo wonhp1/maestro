@@ -1,0 +1,26 @@
+{
+  "_comment": "Phase 22 baseline — PerformanceBenchmarkTests 가 XCTAssertLessThan 으로 ceiling 강제. 회귀 시 CI fail.",
+  "_recordedAt": "2026-04-25",
+  "baselines": [
+    {
+      "name": "fuzzy.1000",
+      "description": "FuzzyMatcher.filter on 1000 items query='test' (3 iters avg, warmup excluded)",
+      "ceilingSeconds": 0.5,
+      "iterations": 3,
+      "rationale": "100ms 목표 — 500ms ceiling 은 CI 변동 마진 5x"
+    },
+    {
+      "name": "appcast.100",
+      "description": "AppCastParser.parse on 100-item Sparkle XML (3 iters avg)",
+      "ceilingSeconds": 0.2,
+      "iterations": 3,
+      "rationale": "30ms 목표 — 200ms ceiling, XMLParser overhead 고려"
+    }
+  ],
+  "_openItems": [
+    "cold start (앱 launch → ControlTowerView .task) — Instruments 측정 필요, Phase 23+",
+    "dispatch round-trip — adapter mock 으로 측정 가능, Phase 23+",
+    "1000-turn discussion 스크롤 60fps — SwiftUI snapshot/profiling 필요, Phase 23+",
+    "memory footprint (idle <200MB / 10폴더 <500MB) — Instruments 필요, Phase 23+"
+  ]
+}

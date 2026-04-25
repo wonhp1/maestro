@@ -111,7 +111,12 @@ struct SidebarView: View {
             if viewModel.folders.isEmpty {
                 emptyState
             } else {
-                ForEach(viewModel.folders) { folder in
+                ForEach(viewModel.folders.sorted(by: { lhs, rhs in
+                    // Control 폴더가 항상 sidebar 첫 자리
+                    if ControlAgentProvisioner.isControlFolder(lhs.id) { return true }
+                    if ControlAgentProvisioner.isControlFolder(rhs.id) { return false }
+                    return lhs.displayName < rhs.displayName
+                })) { folder in
                     FolderRow(
                         folder: folder,
                         status: statusStore?.status(for: folder.id),
@@ -178,13 +183,14 @@ private struct FolderRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "folder.fill")
-                .foregroundStyle(.tint)
+            Image(systemName: ControlAgentProvisioner.isControlFolder(folder.id) ? "star.circle.fill" : "folder.fill")
+                .foregroundStyle(ControlAgentProvisioner.isControlFolder(folder.id) ? Color.orange : Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(folder.displayName)
                         .font(.body)
                         .lineLimit(1)
+                        .bold(ControlAgentProvisioner.isControlFolder(folder.id))
                     if let status {
                         AgentStatusBadge(status: status)
                     }

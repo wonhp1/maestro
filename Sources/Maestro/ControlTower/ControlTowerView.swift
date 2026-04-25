@@ -72,6 +72,12 @@ struct ControlTowerView: View {
         .onChange(of: environment.folderViewModel?.selectedFolderID) { _, newValue in
             environment.menuActionRouter.canDeleteSelectedFolder = newValue != nil
         }
+        // Phase 27 — folder 변화 시 control agent 가 읽는 snapshot 갱신
+        .onChange(of: environment.folderViewModel?.folders.count) { _, _ in
+            if let folders = environment.folderViewModel?.folders {
+                environment.folderListSnapshot.update(folders)
+            }
+        }
         // Cmd+K — 커맨드 팔레트 열기
         .background(
             Button("") {
@@ -227,6 +233,8 @@ public final class ControlTowerEnvironment {
     public let notificationService: NotificationService
     public let apiKeyStorage: APIKeyStorage
     public let adapterSelector: AdapterSelector?
+    /// Control 메타 에이전트가 매 호출 시 fresh 폴더 목록 읽도록 하는 thread-safe snapshot (Phase 27).
+    public let folderListSnapshot: FolderListSnapshot
     public internal(set) var detectedAdapterIDs: [String] = []
     /// bootstrap() 후 set — 실제 디스크 경로로 생성. 그 전엔 nil.
     public private(set) var preferencesStore: PreferencesStore?
@@ -261,7 +269,8 @@ public final class ControlTowerEnvironment {
         notificationService: NotificationService? = nil,
         preferencesStore: PreferencesStore? = nil,
         apiKeyStorage: APIKeyStorage = APIKeyStorage(),
-        adapterSelector: AdapterSelector? = nil
+        adapterSelector: AdapterSelector? = nil,
+        folderListSnapshot: FolderListSnapshot = FolderListSnapshot()
     ) {
         self.pathsProvider = pathsProvider
         self.pickerFactory = pickerFactory
@@ -285,6 +294,7 @@ public final class ControlTowerEnvironment {
         self.notificationService = notificationService ?? NoopNotificationService()
         self.apiKeyStorage = apiKeyStorage
         self.adapterSelector = adapterSelector
+        self.folderListSnapshot = folderListSnapshot
         // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
         // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
         self.preferencesStore = preferencesStore
@@ -297,7 +307,7 @@ public final class ControlTowerEnvironment {
     }
 
     /// production 기본 환경 — NSOpenPanelFolderPicker + AdapterSelector (Phase 24).
-    /// preferred adapter detect 통과 시 그것 사용, 모두 실패 시 MockAdapter fallback (UI 검증).
+    /// Control 폴더는 동적 system prompt 가 주입된 별도 ClaudeAdapter (Phase 27).
     public static func makeProduction() -> ControlTowerEnvironment {
         let candidates: [String: any AgentAdapter] = {
             var map: [String: any AgentAdapter] = [:]
@@ -311,12 +321,31 @@ public final class ControlTowerEnvironment {
         }()
         let mock = MockAdapter()
         let selector = AdapterSelector(candidates: candidates, fallback: mock)
+        // Control agent 가 매 호출 시 fresh 폴더 목록을 읽도록 thread-safe snapshot.
+        let folderSnapshot = FolderListSnapshot()
+        let controlClaudeAdapter: ClaudeAdapter? = try? ClaudeAdapter(
+            appendSystemPromptProvider: { [folderSnapshot] in
+                let entries = folderSnapshot.read()
+                    .filter { !ControlAgentProvisioner.isControlFolder($0.id) }
+                    .map { folder in
+                        ControlAgentSystemPrompt.AgentEntry(
+                            agentID: Maestro.syntheticAgentID(for: folder.id).rawValue,
+                            displayName: folder.displayName,
+                            folderPath: folder.path.path
+                        )
+                    }
+                return ControlAgentSystemPrompt.build(agents: entries)
+            }
+        )
         return ControlTowerEnvironment(
             pathsProvider: { try AppSupportPaths.forApplication() },
             pickerFactory: { NSOpenPanelFolderPicker() },
-            chatViewModelFactory: { [selector] folder in
-                // 호출 시점에 선택 — preferences/detect 결과 반영
-                // 환경 자체는 PreferencesStore 가 bootstrap 후 set 되므로 selector 가 stand-alone 으로 적정값 결정
+            chatViewModelFactory: { [selector, controlClaudeAdapter] folder in
+                // Control 폴더 → 동적 system prompt 주입된 ClaudeAdapter
+                if ControlAgentProvisioner.isControlFolder(folder.id), let ctrl = controlClaudeAdapter {
+                    let session = try await ctrl.createSession(folderPath: folder.path)
+                    return try ChatViewModel(adapter: ctrl, session: session)
+                }
                 let adapter = await selector.select(
                     preferred: "claude",
                     enabled: ["claude", "aider"]
@@ -324,7 +353,8 @@ public final class ControlTowerEnvironment {
                 let session = try await adapter.createSession(folderPath: folder.path)
                 return try ChatViewModel(adapter: adapter, session: session)
             },
-            adapterSelector: selector
+            adapterSelector: selector,
+            folderListSnapshot: folderSnapshot
         )
     }
 
@@ -365,6 +395,13 @@ public final class ControlTowerEnvironment {
             )
             self.folderViewModel = viewModel
             await viewModel.bootstrap()
+            // Phase 27 — Control 메타 에이전트 자동 프로비저닝 (이미 있으면 skip)
+            _ = try? await ControlAgentProvisioner.provision(
+                registry: registry, appSupportRoot: paths.root
+            )
+            await viewModel.bootstrap()  // 새로 추가된 control 폴더 reload
+            // folderListSnapshot 갱신 (control adapter 의 system prompt 가 읽음)
+            self.folderListSnapshot.update(viewModel.folders)
             await wireDispatchService(paths: paths, folderViewModel: viewModel)
             await commandRegistry.register(
                 FolderCommandProvider(folderViewModel: viewModel),

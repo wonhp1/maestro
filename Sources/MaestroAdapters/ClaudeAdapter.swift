@@ -34,6 +34,9 @@ public actor ClaudeAdapter: AgentAdapter {
     private let sanitizer: EnvironmentSanitizer
     private let userCommandsDirectory: URL
     private let logger: MaestroLogger
+    /// 매 sendMessage 마다 호출 — nil 이면 system prompt 미적용. control agent 가
+    /// 동적 폴더 목록 주입에 사용 (Phase 27).
+    private let appendSystemPromptProvider: @Sendable () -> String?
 
     private var sessions: [SessionID: Session] = [:]
     /// 첫 메시지 전송이 완료된 세션 — 이후 호출은 `--resume`.
@@ -49,7 +52,8 @@ public actor ClaudeAdapter: AgentAdapter {
         executable: String = ClaudeProfile.executableName,
         sanitizer: EnvironmentSanitizer = .default,
         userCommandsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: ".claude/commands", directoryHint: .isDirectory)
+            .appending(path: ".claude/commands", directoryHint: .isDirectory),
+        appendSystemPromptProvider: @escaping @Sendable () -> String? = { nil }
     ) throws {
         self.executor = executor
         self.streamer = streamer
@@ -58,6 +62,7 @@ public actor ClaudeAdapter: AgentAdapter {
         self.sanitizer = sanitizer
         self.userCommandsDirectory = userCommandsDirectory
         self.logger = MaestroLogger(category: .adapter)
+        self.appendSystemPromptProvider = appendSystemPromptProvider
     }
 
     // MARK: - AgentAdapter conformance
@@ -234,6 +239,12 @@ public actor ClaudeAdapter: AgentAdapter {
         ]
         if outputFormat == "stream-json" {
             args.append("--verbose")
+        }
+        // Phase 27 — control agent 처럼 동적 system prompt 주입.
+        // 매 호출마다 fresh — 폴더 추가/제거 즉시 반영.
+        if let systemPrompt = appendSystemPromptProvider(), !systemPrompt.isEmpty {
+            args.append("--append-system-prompt")
+            args.append(systemPrompt)
         }
         return args
     }

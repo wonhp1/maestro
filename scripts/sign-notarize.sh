@@ -46,12 +46,31 @@ if $DRY_RUN; then
     exit 0
 fi
 
-echo "==> codesign nested frameworks (Sparkle, etc.)"
-# Phase 26: nested .framework / XPC / Updater.app 를 먼저 서명
-find "$APP_BUNDLE/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.app" -o -name "*.xpc" \) 2>/dev/null | sort -r | while read -r nested; do
+echo "==> codesign nested executables + bundles (Sparkle Autoupdate / Updater.app / XPC)"
+# Phase 26: Sparkle.framework 안의 raw binary (Autoupdate) + nested .app / .xpc 모두 서명.
+# 가장 안쪽부터 sort -r (depth desc) 으로 처리 — outer framework 가 마지막.
+SPARKLE_DIR="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+if [[ -d "$SPARKLE_DIR" ]]; then
+    # Autoupdate raw binary
+    if [[ -f "$SPARKLE_DIR/Versions/B/Autoupdate" ]]; then
+        codesign --force --options runtime --timestamp \
+            --sign "$MAESTRO_SIGN_IDENTITY" "$SPARKLE_DIR/Versions/B/Autoupdate" 2>&1 | head -1
+    fi
+    # XPC services
+    for xpc in "$SPARKLE_DIR/Versions/B/XPCServices/"*.xpc; do
+        [[ -d "$xpc" ]] || continue
+        codesign --force --options runtime --timestamp \
+            --sign "$MAESTRO_SIGN_IDENTITY" "$xpc" 2>&1 | head -1
+    done
+    # Updater.app
+    if [[ -d "$SPARKLE_DIR/Versions/B/Updater.app" ]]; then
+        codesign --force --options runtime --timestamp \
+            --sign "$MAESTRO_SIGN_IDENTITY" "$SPARKLE_DIR/Versions/B/Updater.app" 2>&1 | head -1
+    fi
+    # outer framework
     codesign --force --options runtime --timestamp \
-        --sign "$MAESTRO_SIGN_IDENTITY" "$nested" 2>&1 | head -1
-done
+        --sign "$MAESTRO_SIGN_IDENTITY" "$SPARKLE_DIR" 2>&1 | head -1
+fi
 
 echo "==> codesign $APP_BUNDLE"
 codesign --force --options runtime --timestamp \

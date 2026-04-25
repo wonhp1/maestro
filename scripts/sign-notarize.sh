@@ -46,6 +46,13 @@ if $DRY_RUN; then
     exit 0
 fi
 
+echo "==> codesign nested frameworks (Sparkle, etc.)"
+# Phase 26: nested .framework / XPC / Updater.app 를 먼저 서명
+find "$APP_BUNDLE/Contents/Frameworks" -type d \( -name "*.framework" -o -name "*.app" -o -name "*.xpc" \) 2>/dev/null | sort -r | while read -r nested; do
+    codesign --force --options runtime --timestamp \
+        --sign "$MAESTRO_SIGN_IDENTITY" "$nested" 2>&1 | head -1
+done
+
 echo "==> codesign $APP_BUNDLE"
 codesign --force --options runtime --timestamp \
     --sign "$MAESTRO_SIGN_IDENTITY" "$APP_BUNDLE"

@@ -7,6 +7,7 @@ import SwiftUI
 /// SwiftUI 가 `Commands` 를 view body 에 주입하므로 별도 ViewModel 없이 직접 구성.
 struct MaestroMenuCommands: Commands {
     let router: MenuActionRouter
+    let updateController: UpdateController
 
     var body: some Commands {
         // File 메뉴 — 새 폴더 / 데이터 폴더 열기 / 진단 번들
@@ -27,10 +28,14 @@ struct MaestroMenuCommands: Commands {
                 .disabled(!router.canDeleteSelectedFolder)
         }
 
-        // Maestro 메뉴 (앱 메뉴) — 환경설정
+        // Maestro 메뉴 (앱 메뉴) — 환경설정 + 업데이트 확인 (Phase 26)
         CommandGroup(replacing: .appSettings) {
             Button("환경설정…") { router.openPreferences() }
                 .keyboardShortcut(",", modifiers: [.command])
+        }
+        CommandGroup(after: .appInfo) {
+            Button("업데이트 확인…") { updateController.checkForUpdates() }
+                .disabled(!updateController.canCheckForUpdates)
         }
 
         // Window — 커맨드 팔레트 열기 (Cmd+K 는 ControlTowerView 도 등록, 메뉴는 발견성)

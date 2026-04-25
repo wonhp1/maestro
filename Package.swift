@@ -18,13 +18,17 @@ let package = Package(
         .library(name: "MaestroAdapters", targets: ["MaestroAdapters"]),
     ],
     dependencies: [
-        // Phase 1 기준 외부 의존성 없음 — Swift 표준 라이브러리만 사용.
-        // 후속 Phase에서 swift-log, swift-argument-parser, SwiftTerm, Sparkle 추가 예정.
+        // Phase 26 — Sparkle 자동 업데이트.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
     ],
     targets: [
         .executableTarget(
             name: "Maestro",
-            dependencies: ["MaestroCore", "MaestroAdapters"],
+            dependencies: [
+                "MaestroCore",
+                "MaestroAdapters",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/Maestro",
             swiftSettings: [
                 .swiftLanguageMode(.v6),  // Strict Concurrency 활성

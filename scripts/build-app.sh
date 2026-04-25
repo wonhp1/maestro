@@ -69,9 +69,21 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSUserNotificationAlertStyle</key><string>alert</string>
+    <key>SUFeedURL</key><string>${MAESTRO_APPCAST_URL:-https://wonhp1.github.io/maestro/appcast.xml}</string>
+    <key>SUPublicEDKey</key><string>${MAESTRO_SPARKLE_PUBLIC_KEY:-}</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>86400</integer>
 </dict>
 </plist>
 EOF
+
+# 4. Sparkle.framework 번들 — SwiftPM 가 .build/release 에 위치시킴.
+SPARKLE_FW=$(find .build -type d -name "Sparkle.framework" 2>/dev/null | head -1)
+if [[ -n "$SPARKLE_FW" ]]; then
+    mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
+    cp -R "$SPARKLE_FW" "${APP_BUNDLE}/Contents/Frameworks/"
+    echo "==> Sparkle.framework 번들 추가"
+fi
 
 echo "==> $APP_BUNDLE 생성 완료"
 echo "다음 단계: scripts/sign-notarize.sh"

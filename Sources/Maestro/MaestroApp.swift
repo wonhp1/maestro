@@ -14,6 +14,7 @@ import SwiftUI
 @main
 struct MaestroApp: App {
     @State private var environment = ControlTowerEnvironment.makeProduction()
+    @State private var updateController = UpdateController()
 
     var body: some Scene {
         WindowGroup(
@@ -29,7 +30,10 @@ struct MaestroApp: App {
         }
         .windowResizability(.contentMinSize)
         .commands {
-            MaestroMenuCommands(router: environment.menuActionRouter)
+            MaestroMenuCommands(
+                router: environment.menuActionRouter,
+                updateController: updateController
+            )
         }
 
         Settings {

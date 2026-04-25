@@ -19,21 +19,30 @@ struct MaestroApp: App {
     init() {
         // .app launch 시 PATH 보정: 사용자 로그인 쉘의 PATH 를 머지해서
         // ~/.npm-global/bin, /opt/homebrew/bin 등 사용자 설치 CLI 가 발견되도록 함.
-        // **동기 대기 필요** — ControlTowerEnvironment.makeProduction() 이 CLI 감지를
-        // 시작하므로 PATH 가 먼저 setenv 되어야 race 가 없음.
-        // 1500ms 안에 못 끝내면 그냥 진행 — 사용자 ~/.zshrc 가 nvm/conda 등으로 무거운
-        // 케이스 대비. macOS app-launch hang 임계 (~4s) 의 1/3 만 점유.
-        // Extractor 자체 timeout 은 1.2s 로 살짝 더 짧게 설정 — semaphore wait 가 항상
-        // ProcessExecutor timeout 보다 길도록.
-        let semaphore = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) {
-            _ = await EnvironmentAugmenter.augmentPATHFromLoginShell(
-                extractor: LoginShellPathExtractor(timeout: 1.2)
-            )
-            semaphore.signal()
-        }
-        _ = semaphore.wait(timeout: .now() + .milliseconds(1500))
+        //
+        // **순수 동기** — `Task.detached` + `DispatchSemaphore` 는 SwiftUI `@main App
+        // init()` 컨텍스트에서 cooperative pool 스케줄링과 충돌할 수 있어 (v0.4.3 에서
+        // 실제로 augmentation 이 일어나지 않는 footgun 발견). spawn + waitUntilExit
+        // 으로 직접 처리.
+        let result = EnvironmentAugmenter.augmentPATHFromLoginShellSync()
+        Self.logAugmentResult(result)
         _environment = State(wrappedValue: ControlTowerEnvironment.makeProduction())
+    }
+
+    /// PATH 머지 결과를 OSLog 카테고리 `process` 로 기록 — Console.app 에서
+    /// `subsystem:com.gimgyeongwon.maestro category:process` 필터로 확인 가능.
+    private static func logAugmentResult(_ result: AugmentResult) {
+        let logger = MaestroLogger(category: .process)
+        switch result {
+        case .augmented(let added):
+            logger.info("PATH augmented: +\(added) entries from login shell")
+        case .alreadyAugmented:
+            logger.info("PATH already augmented (no-op)")
+        case .extractFailed(let error):
+            logger.error("PATH extract failed: \(String(describing: error))")
+        case .setenvFailed(let errno):
+            logger.error("PATH setenv failed: errno=\(errno)")
+        }
     }
 
     var body: some Scene {

@@ -28,6 +28,61 @@ public enum EnvironmentAugmenter {
         } catch {
             return .extractFailed(error: error)
         }
+        return apply(additions: additions)
+    }
+
+    /// 순수 동기 변형 — `@main App init()` 에서 호출. `async`/Task/DispatchSemaphore
+    /// 조합이 SwiftUI App init 컨텍스트에서 race / 데드락을 일으키는 footgun 회피.
+    /// `Process.waitUntilExit` 으로 직접 spawn → 결과 즉시 반환.
+    /// - Parameter timeout: shell 응답 대기 (초). 기본 2.0.
+    @discardableResult
+    public static func augmentPATHFromLoginShellSync(
+        shellURL: URL = LoginShellPathExtractor.defaultShellURL(),
+        timeout: TimeInterval = 2.0
+    ) -> AugmentResult {
+        if hasAugmented.load() { return .alreadyAugmented }
+        let additions: [String]
+        do {
+            additions = try extractPathSync(shellURL: shellURL, timeout: timeout)
+        } catch {
+            return .extractFailed(error: error)
+        }
+        return apply(additions: additions)
+    }
+
+    /// 동기 spawn — Process.run + waitUntilExit, timeout 지나면 SIGKILL.
+    private static func extractPathSync(shellURL: URL, timeout: TimeInterval) throws -> [String] {
+        let process = Process()
+        process.executableURL = shellURL
+        process.arguments = ["-lc", "echo $PATH"]
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = Pipe()
+        process.environment = EnvironmentSanitizer.default.sanitizedProcessEnvironment()
+        try process.run()
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            process.terminate()
+            Thread.sleep(forTimeInterval: 0.2)
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            throw LoginShellPathExtractorError.timedOut
+        }
+        let data = stdoutPipe.fileHandleForReading.availableData
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            throw LoginShellPathExtractorError.shellFailed(
+                exitCode: process.terminationStatus,
+                stderr: ""
+            )
+        }
+        return LoginShellPathExtractor.parse(raw)
+    }
+
+    /// merge + sanitize + setenv 공통 경로 — async/sync 양쪽에서 사용.
+    private static func apply(additions: [String]) -> AugmentResult {
         let current = parseCurrentPATH()
         let filtered = sanitize(additions)
         let merged = merge(current: current, additions: filtered)

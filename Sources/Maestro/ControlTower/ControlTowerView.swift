@@ -97,8 +97,13 @@ struct ControlTowerView: View {
         }
         .task(id: environment.preferencesStore != nil) {
             if let prefs = environment.preferencesStore, onboardingViewModel == nil {
-                onboardingViewModel = OnboardingViewModel(preferences: prefs)
+                let vm = OnboardingViewModel(preferences: prefs)
+                vm.setDetectedAdapters(environment.detectedAdapterIDs)
+                onboardingViewModel = vm
             }
+        }
+        .onChange(of: environment.detectedAdapterIDs) { _, ids in
+            onboardingViewModel?.setDetectedAdapters(ids)
         }
     }
 
@@ -207,6 +212,8 @@ public final class ControlTowerEnvironment {
     public let activitySummary: AppActivitySummary
     public let notificationService: NotificationService
     public let apiKeyStorage: APIKeyStorage
+    public let adapterSelector: AdapterSelector?
+    public private(set) var detectedAdapterIDs: [String] = []
     /// bootstrap() 후 set — 실제 디스크 경로로 생성. 그 전엔 nil.
     public private(set) var preferencesStore: PreferencesStore?
     public private(set) var folderViewModel: FolderViewModel?
@@ -226,6 +233,8 @@ public final class ControlTowerEnvironment {
     private var slashCommandWatcher: SlashCommandWatcher?
     @ObservationIgnored
     private var summaryObservationTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var inboxNotificationBridge: InboxNotificationBridge?
 
     public init(
         pathsProvider: @escaping () throws -> AppSupportPaths,
@@ -237,7 +246,8 @@ public final class ControlTowerEnvironment {
         orchestrationStatus: OrchestrationStatusModel = OrchestrationStatusModel(),
         notificationService: NotificationService? = nil,
         preferencesStore: PreferencesStore? = nil,
-        apiKeyStorage: APIKeyStorage = APIKeyStorage()
+        apiKeyStorage: APIKeyStorage = APIKeyStorage(),
+        adapterSelector: AdapterSelector? = nil
     ) {
         self.pathsProvider = pathsProvider
         self.pickerFactory = pickerFactory
@@ -260,6 +270,7 @@ public final class ControlTowerEnvironment {
         self.activitySummary = AppActivitySummary()
         self.notificationService = notificationService ?? NoopNotificationService()
         self.apiKeyStorage = apiKeyStorage
+        self.adapterSelector = adapterSelector
         // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
         // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
         self.preferencesStore = preferencesStore
@@ -271,16 +282,35 @@ public final class ControlTowerEnvironment {
         return pendingSlashInsertion
     }
 
-    /// production 기본 환경 — NSOpenPanelFolderPicker + MockAdapter (Phase 14+ 에서 실제 어댑터 wiring).
+    /// production 기본 환경 — NSOpenPanelFolderPicker + AdapterSelector (Phase 24).
+    /// preferred adapter detect 통과 시 그것 사용, 모두 실패 시 MockAdapter fallback (UI 검증).
     public static func makeProduction() -> ControlTowerEnvironment {
-        ControlTowerEnvironment(
+        let candidates: [String: any AgentAdapter] = {
+            var map: [String: any AgentAdapter] = [:]
+            if let claude = try? ClaudeAdapter() {
+                map[ClaudeAdapter.id] = claude
+            }
+            if let aider = try? AiderAdapter() {
+                map[AiderAdapter.id] = aider
+            }
+            return map
+        }()
+        let mock = MockAdapter()
+        let selector = AdapterSelector(candidates: candidates, fallback: mock)
+        return ControlTowerEnvironment(
             pathsProvider: { try AppSupportPaths.forApplication() },
             pickerFactory: { NSOpenPanelFolderPicker() },
-            chatViewModelFactory: { folder in
-                let adapter = MockAdapter()
+            chatViewModelFactory: { [selector] folder in
+                // 호출 시점에 선택 — preferences/detect 결과 반영
+                // 환경 자체는 PreferencesStore 가 bootstrap 후 set 되므로 selector 가 stand-alone 으로 적정값 결정
+                let adapter = await selector.select(
+                    preferred: "claude",
+                    enabled: ["claude", "aider"]
+                )
                 let session = try await adapter.createSession(folderPath: folder.path)
                 return try ChatViewModel(adapter: adapter, session: session)
-            }
+            },
+            adapterSelector: selector
         )
     }
 
@@ -330,9 +360,31 @@ public final class ControlTowerEnvironment {
             wireMenuActions(paths: paths, folderViewModel: viewModel)
             startSummaryObservation()
             await requestNotificationAuthorization()
+            await detectInstalledAdapters()
+            startInboxNotificationBridge()
         } catch {
             self.folderViewModel = nil
         }
+    }
+
+    /// Phase 24 — 설치된 CLI 어댑터 감지 (병렬). 결과를 onboarding/preferences UI 가 읽음.
+    private func detectInstalledAdapters() async {
+        guard let selector = adapterSelector else { return }
+        let installed = await selector.installedAdapterIDs()
+        self.detectedAdapterIDs = installed
+    }
+
+    /// Phase 24 — Inbox 도착 시 시스템 알림. notificationsEnabled preferences 와 동기.
+    private func startInboxNotificationBridge() {
+        guard inboxNotificationBridge == nil else { return }
+        let enabled = preferencesStore?.snapshot.notificationsEnabled ?? true
+        let bridge = InboxNotificationBridge(
+            inboxStore: inboxStore,
+            notificationService: notificationService,
+            notificationsEnabled: enabled
+        )
+        bridge.start()
+        self.inboxNotificationBridge = bridge
     }
 
     /// 메뉴 / 메뉴바가 호출할 액션을 등록. 모든 closure 가 self(=MainActor)를 통해 호출 — 격리 race 없음.

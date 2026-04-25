@@ -83,6 +83,12 @@ if [[ -n "$SPARKLE_FW" ]]; then
     mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
     cp -R "$SPARKLE_FW" "${APP_BUNDLE}/Contents/Frameworks/"
     echo "==> Sparkle.framework 번들 추가"
+
+    # 5. SwiftPM 빌드 executable 에는 @executable_path/../Frameworks rpath 가 없음 →
+    #    Sparkle.framework 가 dyld 검색 경로에 안 잡혀 launch crash (v0.4.0 fix).
+    EXEC_PATH="${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$EXEC_PATH" 2>/dev/null || true
+    echo "==> @executable_path/../Frameworks rpath 추가"
 fi
 
 echo "==> $APP_BUNDLE 생성 완료"

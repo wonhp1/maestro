@@ -79,6 +79,27 @@ public final class ChatViewModel {
         lastError = nil
     }
 
+    /// orchestration 시스템 (DispatchService → observer) 가 자식 폴더의 ChatViewModel
+    /// 에 메시지를 표시할 때 호출. 사용자 입력 → adapter 응답 사이클이 외부에서 끝났으므로
+    /// 두 메시지 (request 본문 = user role / reply 본문 = assistant role) 를 즉시 append.
+    /// 표시용이라 streaming 상태 변경 X.
+    /// - Parameters:
+    ///   - request: 자식이 받은 dispatch envelope (보통 control 의 RELAY_TO 본문)
+    ///   - reply: 자식이 발행한 응답 envelope
+    ///   - requestSenderLabel: user 메시지 앞에 표시할 라벨 (예: "Control") — nil 이면 미표시
+    public func injectIncomingDispatch(
+        request: MessageEnvelope,
+        reply: MessageEnvelope,
+        requestSenderLabel: String? = nil
+    ) {
+        let prefix = requestSenderLabel.map { "[\($0)] " } ?? ""
+        messages.append(ChatMessage.user(prefix + request.body, at: request.createdAt))
+        var assistantMessage = ChatMessage.assistantPlaceholder(at: reply.createdAt)
+        assistantMessage.content = reply.body
+        assistantMessage.status = .complete
+        messages.append(assistantMessage)
+    }
+
     // MARK: - Internals
 
     private func runStream(body: String, placeholderID: UUID) async {

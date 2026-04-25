@@ -489,6 +489,25 @@ public final class ControlTowerEnvironment {
                         Maestro.syntheticAgentID(for: folder.id) == agentID
                     }?.id
                 }
+            },
+            onDispatchSettled: { [weak chatSessionStore = self.chatSessionStore, weak folderViewModel] envelope, reply in
+                // 자식 폴더 ChatViewModel 에 dispatch 표시 — recipient (envelope.to) 의
+                // 폴더 ChatView 에 user 메시지 + 자기 응답으로 append.
+                guard let store = chatSessionStore, let folderViewModel else { return }
+                await MainActor.run {
+                    let folder = folderViewModel.folders.first { folder in
+                        Maestro.syntheticAgentID(for: folder.id) == envelope.to
+                    }
+                    guard let folder else { return }
+                    let chatVM = store.cached(for: folder.id)
+                    let senderLabel = folderViewModel.folders.first { folder in
+                        Maestro.syntheticAgentID(for: folder.id) == envelope.from
+                    }?.displayName ?? envelope.from.rawValue
+                    chatVM?.injectIncomingDispatch(
+                        request: envelope, reply: reply,
+                        requestSenderLabel: senderLabel
+                    )
+                }
             }
         )
         self.dispatchService = DispatchService(

@@ -10,17 +10,23 @@ public actor ControlTowerDispatchObserver: DispatchObserving {
     private let agentStatus: AgentStatusStore
     private let inbox: InboxStore
     private let agentToFolder: @Sendable (AgentID) async -> FolderID?
+    /// Phase v0.4.6 — dispatch 완료 시 호출. ControlTowerEnvironment 가 양쪽 폴더의
+    /// ChatViewModel 에 incoming 메시지 / 자식 응답을 주입하여 채팅에 표시.
+    private let onDispatchSettled: @Sendable (MessageEnvelope, MessageEnvelope) async -> Void
 
     public init(
         orchestrationStatus: OrchestrationStatusModel,
         agentStatus: AgentStatusStore,
         inbox: InboxStore,
-        agentToFolder: @escaping @Sendable (AgentID) async -> FolderID?
+        agentToFolder: @escaping @Sendable (AgentID) async -> FolderID?,
+        onDispatchSettled: @escaping @Sendable (MessageEnvelope, MessageEnvelope) async -> Void
+            = { _, _ in }
     ) {
         self.orchestrationStatus = orchestrationStatus
         self.agentStatus = agentStatus
         self.inbox = inbox
         self.agentToFolder = agentToFolder
+        self.onDispatchSettled = onDispatchSettled
     }
 
     public func dispatchStarted(envelope: MessageEnvelope) async {
@@ -45,6 +51,7 @@ public actor ControlTowerDispatchObserver: DispatchObserving {
                 agentStatus.setIdle(folderID)
             }
         }
+        await onDispatchSettled(envelope, reply)
     }
 
     public func dispatchFailed(envelope: MessageEnvelope, error: Error) async {

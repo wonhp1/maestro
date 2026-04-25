@@ -7,11 +7,13 @@ import XCTest
 final class ChatSessionStoreTests: XCTestCase {
     private var tempRoot: URL!
 
-    override func setUpWithError() throws {
+    // CI Xcode 16.X 의 더 엄격한 isolation: setUpWithError 는 nonisolated 컨텍스트 →
+    // @MainActor 격리된 tempRoot 변경 불가. async variant 로 MainActor hop.
+    override func setUp() async throws {
         tempRoot = try TestSupport.makeTempDirectory()
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         TestSupport.removeTempDirectory(tempRoot)
     }
 

@@ -380,13 +380,18 @@ public final class ControlTowerEnvironment {
             pathsProvider: { try AppSupportPaths.forApplication() },
             pickerFactory: { NSOpenPanelFolderPicker() },
             chatViewModelFactory: { [selector, controlClaudeAdapter] folder in
-                // Control 폴더 → 동적 system prompt 주입된 ClaudeAdapter
-                if ControlAgentProvisioner.isControlFolder(folder.id), let ctrl = controlClaudeAdapter {
+                // Control 폴더 + adapterId == "claude" → 동적 system prompt 주입된 ClaudeAdapter.
+                // 사용자가 control 폴더 어댑터를 다른 vendor 로 변경한 경우 일반 selector 경로로
+                // 폴백 — system prompt 자동 주입은 Claude 전용 (Phase v0.4.6 한계, Aider
+                // wire-in 은 v0.4.7 후속).
+                if ControlAgentProvisioner.isControlFolder(folder.id),
+                   folder.adapterId.rawValue == "claude",
+                   let ctrl = controlClaudeAdapter {
                     let session = try await ctrl.createSession(folderPath: folder.path)
                     return try ChatViewModel(adapter: ctrl, session: session)
                 }
                 let adapter = await selector.select(
-                    preferred: "claude",
+                    preferred: folder.adapterId.rawValue,
                     enabled: ["claude", "aider"]
                 )
                 let session = try await adapter.createSession(folderPath: folder.path)

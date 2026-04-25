@@ -59,6 +59,10 @@ struct FolderSettingsSheet: View {
                 hintRow(hint)
             }
 
+            if isControlNonClaudeWarning {
+                controlVendorWarning
+            }
+
             HStack {
                 Spacer()
                 Button("취소", role: .cancel, action: dismiss)
@@ -112,6 +116,25 @@ struct FolderSettingsSheet: View {
         }
         .padding(10)
         .background(Color.orange.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var isControlNonClaudeWarning: Bool {
+        ControlAgentProvisioner.isControlFolder(folder.id) && adapterId != "claude"
+    }
+
+    @ViewBuilder
+    private var controlVendorWarning: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle.fill").foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Control 폴더에 Claude 외 어댑터 사용 중").font(.callout).bold()
+                Text("폴더 목록 자동 주입은 Claude 전용이에요. 다른 어댑터는 일반 시스템 프롬프트만 사용됩니다 — 사용자가 직접 폴더 ID 를 알려줘야 합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color.blue.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 

@@ -310,8 +310,17 @@ final class EnvelopeRouterTests: XCTestCase {
         let inboxPath = paths.inboxFile(agent: bobID, envelope: envelope.id)
         try await storage.write(envelope, to: inboxPath)
 
-        // dispatch 가 시작되도록 잠시 대기
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // dispatch 가 실제로 시작되었는지 deterministic poll — router 가 envelope 를 inbox 에서 consume 하면 파일 사라짐.
+        // CI macOS-15 의 DirectoryWatcher event timing 이 200ms fixed sleep 보다 느릴 수 있음 (Phase 20 CI flake 수정).
+        var consumed = false
+        for _ in 0..<60 {
+            if !FileManager.default.fileExists(atPath: inboxPath.path) {
+                consumed = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(consumed, "router 가 3초 안에 envelope 를 consume 해야 함")
         await router.unbindAll()
 
         // 응답이 outbox 에 정상 기록되었는지 (cancel 되지 않았다는 증거)

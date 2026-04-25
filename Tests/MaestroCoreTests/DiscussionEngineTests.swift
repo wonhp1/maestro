@@ -79,6 +79,13 @@ final class DiscussionEngineTests: XCTestCase {
             if case .turnCompleted(let speaker, _) = event { return speaker }
             return nil
         }
+        // events 의 envelope 가 Phase 15 에서 full envelope 로 변경됨 — speaker 와 일치 확인
+        let envelopes = events.compactMap { event -> MessageEnvelope? in
+            if case .turnCompleted(_, let env) = event { return env }
+            return nil
+        }
+        XCTAssertEqual(envelopes.count, speakers.count)
+        XCTAssertTrue(envelopes.allSatisfy { !$0.body.isEmpty })
         XCTAssertEqual(speakers, [alice, bob, carol])
         XCTAssertTrue(events.contains { event in
             if case .terminated(let reason) = event { return reason == .maxTurnsReached }

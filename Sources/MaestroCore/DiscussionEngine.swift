@@ -21,10 +21,10 @@ public actor DiscussionEngine {
     public enum Event: Sendable, Equatable {
         case stateChanged(DiscussionState)
         case turnStarted(speaker: AgentID, turnIndex: Int)
-        case turnCompleted(speaker: AgentID, envelopeId: EnvelopeID)
+        /// Phase 15: envelope 전체를 들고 옴 — UI 가 별도 fetch 없이 즉시 렌더.
+        case turnCompleted(speaker: AgentID, envelope: MessageEnvelope)
         case turnFailed(speaker: AgentID, message: String)
-        /// pause/terminate 가 dispatch 중간에 끼어든 결과 reply 를 폐기. silent drop 회피
-        /// (must-fix MED-1).
+        /// pause/terminate 가 dispatch 중간에 끼어든 결과 reply 를 폐기 (must-fix MED-1).
         case turnDiscarded(speaker: AgentID, envelopeId: EnvelopeID)
         case terminated(reason: TerminationReason)
     }
@@ -174,7 +174,7 @@ public actor DiscussionEngine {
             }
             do {
                 try discussion.recordTurn(from: envelope)
-                broadcast(.turnCompleted(speaker: speaker, envelopeId: envelope.id))
+                broadcast(.turnCompleted(speaker: speaker, envelope: envelope))
                 if discussion.state == .completed {
                     broadcast(.stateChanged(.completed))
                     broadcast(.terminated(reason: .maxTurnsReached))

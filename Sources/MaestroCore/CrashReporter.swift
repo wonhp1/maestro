@@ -119,4 +119,73 @@ public struct CrashReporter: Sendable {
             try? FileManager.default.removeItem(at: url)
         }
     }
+
+    /// 부팅 시 1회 호출 — `NSSetUncaughtExceptionHandler` + 주요 signal 핸들러 등록.
+    /// 글로벌 state 라 한 번만 install. 핸들러 안에서는 async-signal-safe write 만 사용.
+    public func install() {
+        Self.installGlobalHandlers(directory: directory, appVersion: appVersion)
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var installed: Bool = false
+
+    private static func installGlobalHandlers(directory: URL, appVersion: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !installed else { return }
+        installed = true
+        try? FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        // Box state into nonisolated globals (handlers can't capture closure state safely).
+        crashDirectory = directory
+        crashAppVersion = appVersion
+
+        NSSetUncaughtExceptionHandler { exception in
+            writeCrashRecord(
+                kind: "exception",
+                message: "\(exception.name.rawValue): \(exception.reason ?? "")",
+                trace: exception.callStackSymbols
+            )
+        }
+
+        let signals: [Int32] = [SIGABRT, SIGILL, SIGSEGV, SIGFPE, SIGBUS, SIGPIPE]
+        for sig in signals {
+            signal(sig) { sig in
+                writeCrashRecord(
+                    kind: "signal",
+                    message: "signal \(sig)",
+                    trace: Thread.callStackSymbols
+                )
+                signal(sig, SIG_DFL)
+                raise(sig)
+            }
+        }
+    }
+}
+
+// MARK: - signal-safe globals
+
+nonisolated(unsafe) private var crashDirectory: URL?
+nonisolated(unsafe) private var crashAppVersion: String = "unknown"
+
+private func writeCrashRecord(kind: String, message: String, trace: [String]) {
+    // Note: signal handlers are async-signal-unsafe — JSONEncoder uses malloc.
+    // 의도적 trade-off: NSException 경로 (대부분의 Cocoa crash) 에서는 안전, 순수
+    // POSIX SIGSEGV 등은 가끔 손실 가능. 더 견고한 capture 는 PLCrashReporter Phase 26+.
+    guard let dir = crashDirectory else { return }
+    let reportKind: CrashReport.Kind = kind == "exception" ? .exception : .signal
+    let report = CrashReport(
+        occurredAt: Date(),
+        appVersion: crashAppVersion,
+        kind: reportKind,
+        message: message,
+        stackTrace: trace
+    )
+    let url = dir.appending(
+        path: "crash-\(report.id).json", directoryHint: .notDirectory
+    )
+    if let data = try? JSONEncoder.maestro.encode(report) {
+        try? data.write(to: url, options: .atomic)
+    }
 }

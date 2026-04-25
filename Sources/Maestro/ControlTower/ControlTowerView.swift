@@ -17,6 +17,7 @@ struct ControlTowerView: View {
     @Bindable var environment: ControlTowerEnvironment
     @State private var dockBadgeUpdater: DockBadgeUpdater?
     @State private var onboardingViewModel: OnboardingViewModel?
+    @State private var showFeedbackSheet: Bool = false
 
     var body: some View {
         NavigationSplitView {
@@ -104,6 +105,19 @@ struct ControlTowerView: View {
         }
         .onChange(of: environment.detectedAdapterIDs) { _, ids in
             onboardingViewModel?.setDetectedAdapters(ids)
+        }
+        .sheet(isPresented: $showFeedbackSheet) {
+            FeedbackSheetView(detectedAdapters: environment.detectedAdapterIDs)
+        }
+        .onAppear {
+            environment.menuActionRouter.onOpenHelp = { @MainActor in
+                if let url = URL(string: "https://github.com/wonhp1/maestro/issues") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            environment.menuActionRouter.onSendFeedback = {
+                Task { @MainActor in showFeedbackSheet = true }
+            }
         }
     }
 
@@ -213,12 +227,12 @@ public final class ControlTowerEnvironment {
     public let notificationService: NotificationService
     public let apiKeyStorage: APIKeyStorage
     public let adapterSelector: AdapterSelector?
-    public private(set) var detectedAdapterIDs: [String] = []
+    public internal(set) var detectedAdapterIDs: [String] = []
     /// bootstrap() 후 set — 실제 디스크 경로로 생성. 그 전엔 nil.
     public private(set) var preferencesStore: PreferencesStore?
     public private(set) var folderViewModel: FolderViewModel?
     public private(set) var dispatchService: DispatchService?
-    public private(set) var pendingSlashInsertion: String?
+    public internal(set) var pendingSlashInsertion: String?
     public private(set) var resolvedPaths: AppSupportPaths?
     /// `MaestroApp` 가 메인 윈도우에 onboarding sheet 띄울지 여부.
     public var showOnboarding: Bool = false
@@ -230,11 +244,11 @@ public final class ControlTowerEnvironment {
     @ObservationIgnored
     private let envelopeStorage: EnvelopeStorage = EnvelopeStorage()
     @ObservationIgnored
-    private var slashCommandWatcher: SlashCommandWatcher?
+    var slashCommandWatcher: SlashCommandWatcher?
     @ObservationIgnored
-    private var summaryObservationTask: Task<Void, Never>?
+    var summaryObservationTask: Task<Void, Never>?
     @ObservationIgnored
-    private var inboxNotificationBridge: InboxNotificationBridge?
+    var inboxNotificationBridge: InboxNotificationBridge?
 
     public init(
         pathsProvider: @escaping () throws -> AppSupportPaths,
@@ -362,119 +376,11 @@ public final class ControlTowerEnvironment {
             await requestNotificationAuthorization()
             await detectInstalledAdapters()
             startInboxNotificationBridge()
+            installCrashReporter(paths: paths)
+            await runDataMigrations(paths: paths)
         } catch {
             self.folderViewModel = nil
         }
-    }
-
-    /// Phase 24 — 설치된 CLI 어댑터 감지 (병렬). 결과를 onboarding/preferences UI 가 읽음.
-    private func detectInstalledAdapters() async {
-        guard let selector = adapterSelector else { return }
-        let installed = await selector.installedAdapterIDs()
-        self.detectedAdapterIDs = installed
-    }
-
-    /// Phase 24 — Inbox 도착 시 시스템 알림. notificationsEnabled preferences 와 동기.
-    private func startInboxNotificationBridge() {
-        guard inboxNotificationBridge == nil else { return }
-        let enabled = preferencesStore?.snapshot.notificationsEnabled ?? true
-        let bridge = InboxNotificationBridge(
-            inboxStore: inboxStore,
-            notificationService: notificationService,
-            notificationsEnabled: enabled
-        )
-        bridge.start()
-        self.inboxNotificationBridge = bridge
-    }
-
-    /// 메뉴 / 메뉴바가 호출할 액션을 등록. 모든 closure 가 self(=MainActor)를 통해 호출 — 격리 race 없음.
-    private func wireMenuActions(paths: AppSupportPaths, folderViewModel: FolderViewModel) {
-        menuActionRouter.onAddFolder = { [weak self] in
-            await self?.folderViewModel?.addFolderViaPicker()
-        }
-        menuActionRouter.onDeleteSelectedFolder = { [weak self] in
-            await self?.deleteSelectedFolder()
-        }
-        menuActionRouter.onOpenCommandPalette = { [weak self] in
-            await self?.commandPaletteViewModel.present()
-        }
-        let dataRoot = paths.root
-        menuActionRouter.onRevealDataFolder = {
-            await MainActor.run {
-                NSWorkspace.shared.activateFileViewerSelecting([dataRoot])
-            }
-        }
-        // 환경설정 ⌘, — Settings Scene 자동 트리거 (NSApp.sendAction).
-        menuActionRouter.onOpenPreferences = {
-            await MainActor.run {
-                _ = NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
-        }
-        // 진단 / 도움말은 Phase 22 polish 에서 wiring — 현재는 noop 유지.
-    }
-
-    private func deleteSelectedFolder() async {
-        guard let viewModel = folderViewModel,
-              let target = viewModel.selectedFolderID else { return }
-        await viewModel.deleteFolder(id: target)
-    }
-
-    /// orchestrationStatus / inboxStore / folderViewModel 변화를 폴링해 summary 갱신.
-    /// withObservationTracking 의 single-fire 한계를 우회하기 위해 1s tick 사용 — Phase 18 대시보드는 실시간성보다 정확성 우선.
-    private func startSummaryObservation() {
-        guard summaryObservationTask == nil else { return }
-        summaryObservationTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refreshSummary()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-        }
-    }
-
-    private func refreshSummary() {
-        let running = orchestrationStatus.entries.filter { $0.state == .running }.count
-        activitySummary.runningDispatchCount = running
-        activitySummary.unreadInboxCount = inboxStore.totalUnread
-        activitySummary.folderCount = folderViewModel?.folders.count ?? 0
-        if let latest = inboxStore.items.first {
-            activitySummary.lastInboxArrival = latest.receivedAt
-        }
-    }
-
-    private func requestNotificationAuthorization() async {
-        _ = await notificationService.requestAuthorization()
-    }
-
-    /// 슬래시 명령 자동 탐색 wiring — `~/.claude/commands` + `~/.claude/skills`.
-    private func wireSlashCommands() async {
-        let commandsDir = FileSlashCommandSource.defaultUserCommandsURL()
-        let skillsDir = SkillSource.defaultUserSkillsURL()
-
-        await slashCommandRegistry.register(
-            FileSlashCommandSource(directory: commandsDir, kind: .userFile),
-            id: "user-file"
-        )
-        await slashCommandRegistry.register(
-            SkillSource(directory: skillsDir),
-            id: "skill"
-        )
-
-        let watcher = SlashCommandWatcher(
-            directories: [commandsDir, skillsDir],
-            registry: slashCommandRegistry
-        )
-        await watcher.start()
-        self.slashCommandWatcher = watcher
-
-        let provider = SlashCommandPaletteProvider(
-            registry: slashCommandRegistry,
-            onSelect: { [weak self] discovered in
-                guard let self else { return }
-                let argHint = discovered.command.arguments?.first.map { " <\($0)>" } ?? ""
-                self.pendingSlashInsertion = "/\(discovered.command.name)\(argHint)"
-            }
-        )
-        await commandRegistry.register(provider, id: "slash")
     }
 
     /// DispatchService 를 wiring — Phase 13.

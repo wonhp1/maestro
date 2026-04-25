@@ -45,6 +45,11 @@ swift build -c release
 mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources"
 cp ".build/release/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 
+# 2b. 앱 아이콘 (Phase 25)
+if [[ -f "Resources/AppIcon.icns" ]]; then
+    cp "Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+fi
+
 # 3. Info.plist
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -59,6 +64,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key><string>${APP_VERSION}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleSignature</key><string>????</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>

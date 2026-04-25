@@ -39,6 +39,9 @@ public final class MenuActionRouter {
     /// 보고서 / 도움 페이지 — Phase 19+ 에서 wiring.
     @ObservationIgnored
     public var onOpenHelp: (@Sendable () async -> Void)?
+    /// 피드백 전송 시트 열기 (Phase 25).
+    @ObservationIgnored
+    public var onSendFeedback: (@Sendable () async -> Void)?
 
     public var canDeleteSelectedFolder: Bool = false
 
@@ -78,6 +81,11 @@ public final class MenuActionRouter {
 
     public func openHelp() {
         guard let handler = onOpenHelp else { return }
+        Task { await handler() }
+    }
+
+    public func sendFeedback() {
+        guard let handler = onSendFeedback else { return }
         Task { await handler() }
     }
 }

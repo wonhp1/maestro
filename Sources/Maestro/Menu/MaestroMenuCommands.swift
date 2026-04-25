@@ -43,6 +43,8 @@ struct MaestroMenuCommands: Commands {
         // Help
         CommandGroup(replacing: .help) {
             Button("Maestro 도움말") { router.openHelp() }
+            Divider()
+            Button("피드백 보내기…") { router.sendFeedback() }
         }
     }
 }

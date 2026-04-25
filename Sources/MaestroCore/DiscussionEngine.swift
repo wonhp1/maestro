@@ -174,6 +174,8 @@ public actor DiscussionEngine {
             }
             do {
                 try discussion.recordTurn(from: envelope)
+                // Phase 27b — moderator 가 history 누적할 기회 (LLMModerator 가 사용)
+                await moderator.observe(envelope: envelope)
                 broadcast(.turnCompleted(speaker: speaker, envelope: envelope))
                 if discussion.state == .completed {
                     broadcast(.stateChanged(.completed))

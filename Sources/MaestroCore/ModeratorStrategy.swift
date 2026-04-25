@@ -17,6 +17,15 @@ public protocol ModeratorStrategy: Sendable {
     /// 다음 발언자 결정. 종료 시 nil.
     /// - Parameter discussion: 현재 상태 (turns / participants / state).
     func nextSpeaker(in discussion: Discussion) async -> AgentID?
+
+    /// 매 턴 envelope 도착 시 호출 — strategy 가 history (body) 를 누적할 기회.
+    /// `Discussion.turns` 메타에는 body 가 없으므로 LLM moderator 가 사용.
+    /// 기본 구현은 no-op.
+    func observe(envelope: MessageEnvelope) async
+}
+
+public extension ModeratorStrategy {
+    func observe(envelope: MessageEnvelope) async { /* default no-op */ }
 }
 
 /// 라운드로빈 — 참가자 목록을 순환. moderator 가 지정되어 있으면 그를 skip.

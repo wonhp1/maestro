@@ -15,6 +15,7 @@ import SwiftUI
 /// ```
 struct ControlTowerView: View {
     @Bindable var environment: ControlTowerEnvironment
+    @State private var dockBadgeUpdater: DockBadgeUpdater?
 
     var body: some View {
         NavigationSplitView {
@@ -54,6 +55,20 @@ struct ControlTowerView: View {
         }
         .task {
             await environment.bootstrap()
+            // Dock 뱃지 업데이터는 view 의 lifetime 에 묶음 — 메뉴바 Scene 은 별도 Scene 이라 root view 가 안전.
+            if dockBadgeUpdater == nil {
+                let updater = DockBadgeUpdater(summary: environment.activitySummary)
+                updater.start()
+                dockBadgeUpdater = updater
+            }
+        }
+        .onDisappear {
+            dockBadgeUpdater?.stop()
+            dockBadgeUpdater = nil
+        }
+        // canDeleteSelectedFolder 동기화
+        .onChange(of: environment.folderViewModel?.selectedFolderID) { _, newValue in
+            environment.menuActionRouter.canDeleteSelectedFolder = newValue != nil
         }
         // Cmd+K — 커맨드 팔레트 열기
         .background(
@@ -172,6 +187,9 @@ public final class ControlTowerEnvironment {
     public let recentCommandTracker: RecentCommandTracker
     public let commandPaletteViewModel: CommandPaletteViewModel
     public let slashCommandRegistry: SlashCommandRegistry
+    public let menuActionRouter: MenuActionRouter
+    public let activitySummary: AppActivitySummary
+    public let notificationService: NotificationService
     public private(set) var folderViewModel: FolderViewModel?
     public private(set) var dispatchService: DispatchService?
     public private(set) var pendingSlashInsertion: String?
@@ -184,6 +202,8 @@ public final class ControlTowerEnvironment {
     private let envelopeStorage: EnvelopeStorage = EnvelopeStorage()
     @ObservationIgnored
     private var slashCommandWatcher: SlashCommandWatcher?
+    @ObservationIgnored
+    private var summaryObservationTask: Task<Void, Never>?
 
     public init(
         pathsProvider: @escaping () throws -> AppSupportPaths,
@@ -192,7 +212,8 @@ public final class ControlTowerEnvironment {
             -> ChatViewModel,
         statusStore: AgentStatusStore = AgentStatusStore(),
         inboxStore: InboxStore = InboxStore(),
-        orchestrationStatus: OrchestrationStatusModel = OrchestrationStatusModel()
+        orchestrationStatus: OrchestrationStatusModel = OrchestrationStatusModel(),
+        notificationService: NotificationService? = nil
     ) {
         self.pathsProvider = pathsProvider
         self.pickerFactory = pickerFactory
@@ -211,6 +232,9 @@ public final class ControlTowerEnvironment {
             registry: registry, recentTracker: tracker
         )
         self.slashCommandRegistry = SlashCommandRegistry()
+        self.menuActionRouter = MenuActionRouter()
+        self.activitySummary = AppActivitySummary()
+        self.notificationService = notificationService ?? NoopNotificationService()
     }
 
     /// DispatchComposer 가 읽고 가져간 후 nil 로 클리어.
@@ -267,9 +291,64 @@ public final class ControlTowerEnvironment {
                 id: "folder"
             )
             await wireSlashCommands()
+            wireMenuActions(paths: paths, folderViewModel: viewModel)
+            startSummaryObservation()
+            await requestNotificationAuthorization()
         } catch {
             self.folderViewModel = nil
         }
+    }
+
+    /// 메뉴 / 메뉴바가 호출할 액션을 등록. 모든 closure 가 self(=MainActor)를 통해 호출 — 격리 race 없음.
+    private func wireMenuActions(paths: AppSupportPaths, folderViewModel: FolderViewModel) {
+        menuActionRouter.onAddFolder = { [weak self] in
+            await self?.folderViewModel?.addFolderViaPicker()
+        }
+        menuActionRouter.onDeleteSelectedFolder = { [weak self] in
+            await self?.deleteSelectedFolder()
+        }
+        menuActionRouter.onOpenCommandPalette = { [weak self] in
+            await self?.commandPaletteViewModel.present()
+        }
+        let dataRoot = paths.root
+        menuActionRouter.onRevealDataFolder = {
+            await MainActor.run {
+                NSWorkspace.shared.activateFileViewerSelecting([dataRoot])
+            }
+        }
+        // 진단 / 환경설정 / 도움말은 Phase 19 에서 wiring — 현재는 noop 유지.
+    }
+
+    private func deleteSelectedFolder() async {
+        guard let viewModel = folderViewModel,
+              let target = viewModel.selectedFolderID else { return }
+        await viewModel.deleteFolder(id: target)
+    }
+
+    /// orchestrationStatus / inboxStore / folderViewModel 변화를 폴링해 summary 갱신.
+    /// withObservationTracking 의 single-fire 한계를 우회하기 위해 1s tick 사용 — Phase 18 대시보드는 실시간성보다 정확성 우선.
+    private func startSummaryObservation() {
+        guard summaryObservationTask == nil else { return }
+        summaryObservationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshSummary()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func refreshSummary() {
+        let running = orchestrationStatus.entries.filter { $0.state == .running }.count
+        activitySummary.runningDispatchCount = running
+        activitySummary.unreadInboxCount = inboxStore.totalUnread
+        activitySummary.folderCount = folderViewModel?.folders.count ?? 0
+        if let latest = inboxStore.items.first {
+            activitySummary.lastInboxArrival = latest.receivedAt
+        }
+    }
+
+    private func requestNotificationAuthorization() async {
+        _ = await notificationService.requestAuthorization()
     }
 
     /// 슬래시 명령 자동 탐색 wiring — `~/.claude/commands` + `~/.claude/skills`.

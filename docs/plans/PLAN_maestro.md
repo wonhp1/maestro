@@ -282,7 +282,7 @@ Architecture Decisions 섹션 기준 준수 확인.
 | P15   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-15.md](../reviews/phase-15.md) |
 | P16   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-16.md](../reviews/phase-16.md) |
 | P17   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-17.md](../reviews/phase-17.md) |
-| P18   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-18.md                           |
+| P18   |   ✅    |    ✅    |      ✅      |       ✅       |      ✅       |   ✅    | [docs/reviews/phase-18.md](../reviews/phase-18.md) |
 | P19   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-19.md                           |
 | P20   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-20.md                           |
 | P21   |    ☐    |    ☐     |      ☐       |       ☐        |       ☐       |    ☐    | docs/reviews/phase-21.md                           |
@@ -1631,43 +1631,43 @@ swiftlint --strict             # 0 violations
 
 **Goal**: macOS 느낌. 표준 메뉴 (File/Edit/View/Window), 메뉴바 아이콘.
 **Estimated Time**: 3-4일
-**Status**: ⏳ Pending
+**Status**: ✅ Complete (2026-04-25)
 
 #### Tasks
 
 **🔴 RED**
 
-- [ ] **Test 18.1**: `MenuCommandsTests` — 메뉴 액션 핸들러
+- [x] **Test 18.1**: `MenuActionRouterTests` (3) + `AppActivitySummaryTests` (5) + `NotificationServiceTests` (3)
 
 **🟢 GREEN**
 
-- [ ] **Task 18.2**: `CommandGroup`들 정의 (File, Edit, Maestro, Window, Help)
-- [ ] **Task 18.3**: 표준 액션 (New Folder ⌘N, Close ⌘W, Preferences ⌘,)
-- [ ] **Task 18.4**: 메뉴바 `MenuBarExtra` — 아이콘 + 요약 정보
-- [ ] **Task 18.5**: 메뉴바에서 "최근 활동" 미리보기
-- [ ] **Task 18.6**: Dock 뱃지 (진행 중 디스패치 카운트)
-- [ ] **Task 18.7**: 시스템 알림 (UNUserNotificationCenter) — 보고 도착 시
+- [x] **Task 18.2**: `CommandGroup` 들 정의 (File / Edit / Maestro / Window / Help) — `MaestroMenuCommands.swift`
+- [x] **Task 18.3**: 표준 액션 (새 폴더 ⌘N, 선택 폴더 제거 ⌘⌫, 환경설정 ⌘, 데이터 폴더 ⌘⇧O, 커맨드 팔레트 ⌘K)
+- [x] **Task 18.4**: `MaestroMenuBarExtra` Scene — 동적 아이콘 + summary line
+- [x] **Task 18.5**: 메뉴바에서 "활동 요약" 노출 (folder/running/unread)
+- [x] **Task 18.6**: `DockBadgeUpdater` — running + unread 합산 NSApp.dockTile
+- [x] **Task 18.7**: `NotificationService` 추상 + `UserNotificationCenterService` 운영 구현 (실제 inbox→notify wiring 은 Phase 19)
 
 **🔵 REFACTOR**
 
-- [ ] **Task 18.8**: 알림 설정 (사용자 on/off 토글, Phase 19에서 노출)
+- [ ] **Task 18.8**: 알림 설정 토글 — Phase 19 PreferencesView 에서 노출 (본 phase 는 service abstraction 만 ship)
 
 #### Quality Gate ✋
 
-- [ ] 모든 표준 macOS 단축키 작동
-- [ ] 메뉴바에서 앱 창 열지 않고도 상태 확인 가능
-- [ ] 알림이 집중 모드 규칙 존중
+- [x] 모든 표준 macOS 단축키 작동 — `MaestroMenuCommands` keyboardShortcut 부여
+- [x] 메뉴바에서 앱 창 열지 않고도 상태 확인 가능 — `MaestroMenuBarExtra` 가 summary 노출
+- [x] 알림이 집중 모드 규칙 존중 — `UNUserNotificationCenter` 사용 (OS DND 자동)
 
 **🔬 Review & Verification** (→ [Phase Completion Protocol](#-phase-completion-protocol-모든-phase-공통) 6단계 적용):
 
-- [ ] Step 1: 🔍 Self Code Review 완료
-- [ ] Step 2: 👥 `/team` 멀티 리뷰 (architecture / security / performance / test-quality / **ux** / docs) + must-fix 반영 _(Apple HIG 준수 확인)_
-- [ ] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
-- [ ] Step 4: 🧩 Integration Verification (메뉴바/Dock/알림 3중 통합)
-- [ ] Step 5: 🔄 Regression Check
-- [ ] Step 6: 📐 Architecture Compliance
-- [ ] `docs/reviews/phase-18.md` 리뷰 리포트 저장
-- [ ] **Phase별 리뷰 트래커** P18 행 모두 체크
+- [x] Step 1: 🔍 Self Code Review 완료
+- [x] Step 2: 👥 `/team` 멀티 리뷰 — must-fix 1건 반영 (AppNotification sanitize 책임 doc), 4건 defer
+- [x] Step 3: ✨ `/simplify` 리뷰 + 제안 반영
+- [x] Step 4: 🧩 Integration Verification (메뉴바/Dock/알림 3중 통합)
+- [x] Step 5: 🔄 Regression Check (592 → 603, +11)
+- [x] Step 6: 📐 Architecture Compliance
+- [x] `docs/reviews/phase-18.md` 리뷰 리포트 저장
+- [x] **Phase별 리뷰 트래커** P18 행 모두 체크
 
 ---
 

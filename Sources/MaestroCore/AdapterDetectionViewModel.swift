@@ -76,6 +76,26 @@ public final class AdapterDetectionViewModel {
             return nil
         }
     }
+
+    /// 사용자 친화 어댑터 설명 — vendor picker 행에 한 줄로 표시.
+    public static func description(for adapterId: String) -> String? {
+        switch adapterId {
+        case "claude":
+            return "Anthropic 의 공식 코딩 에이전트. 도구 사용이 강하고 처음 쓰기 좋아요."
+        case "aider":
+            return "오픈소스 멀티 모델 (OpenAI / Claude / Gemini 등) 지원. git 자동 커밋 강점."
+        default:
+            return nil
+        }
+    }
+
+    /// "처음 쓰기 좋음" / "추천" 등의 벳지 — 무거운 표지 아니지만 시작점 안내.
+    public static func recommendationBadge(for adapterId: String) -> String? {
+        switch adapterId {
+        case "claude": return "처음 쓰기 좋음"
+        default: return nil
+        }
+    }
 }
 
 /// 미설치 어댑터의 설치 안내 — UI 에 inline 표시용.

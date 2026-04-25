@@ -182,6 +182,15 @@ private struct AdapterRow: View {
             HStack(spacing: 8) {
                 Text(displayName)
                     .font(.body).bold()
+                if let badge = AdapterDetectionViewModel.recommendationBadge(for: adapterId) {
+                    Text(badge)
+                        .font(.caption2)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(Capsule())
+                }
+                Spacer()
                 if isInstalled {
                     Label(versionBadge, systemImage: "checkmark.circle.fill")
                         .labelStyle(.titleAndIcon)
@@ -192,6 +201,11 @@ private struct AdapterRow: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+            }
+            if let desc = AdapterDetectionViewModel.description(for: adapterId) {
+                Text(desc)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             if !isInstalled, let hint = AdapterDetectionViewModel.installationHint(for: adapterId) {
                 installationHint(hint)

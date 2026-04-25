@@ -55,6 +55,34 @@ struct ControlTowerView: View {
         .task {
             await environment.bootstrap()
         }
+        // Cmd+K — 커맨드 팔레트 열기
+        .background(
+            Button("") {
+                Task { await environment.commandPaletteViewModel.present() }
+            }
+            .keyboardShortcut("k", modifiers: [.command])
+            .opacity(0)
+            .frame(width: 0, height: 0)
+        )
+        // 폴더 단축키 ⌘1 ~ ⌘9
+        .background(folderShortcuts)
+        .sheet(isPresented: Bindable(environment.commandPaletteViewModel).isPresented) {
+            CommandPaletteView(viewModel: environment.commandPaletteViewModel)
+        }
+    }
+
+    @ViewBuilder
+    private var folderShortcuts: some View {
+        if let folderViewModel = environment.folderViewModel {
+            ForEach(Array(folderViewModel.folders.prefix(9).enumerated()), id: \.element.id) { idx, folder in
+                Button("") {
+                    Task { await folderViewModel.select(id: folder.id) }
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: [.command])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+            }
+        }
     }
 
     @ViewBuilder
@@ -140,6 +168,9 @@ public final class ControlTowerEnvironment {
     public let inboxStore: InboxStore
     public let orchestrationStatus: OrchestrationStatusModel
     public let chatSessionStore: ChatSessionStore
+    public let commandRegistry: CommandRegistry
+    public let recentCommandTracker: RecentCommandTracker
+    public let commandPaletteViewModel: CommandPaletteViewModel
     public private(set) var folderViewModel: FolderViewModel?
     public private(set) var dispatchService: DispatchService?
 
@@ -167,6 +198,13 @@ public final class ControlTowerEnvironment {
         self.chatSessionStore = ChatSessionStore(
             factory: chatViewModelFactory,
             statusStore: statusStore
+        )
+        let registry = CommandRegistry()
+        let tracker = RecentCommandTracker()
+        self.commandRegistry = registry
+        self.recentCommandTracker = tracker
+        self.commandPaletteViewModel = CommandPaletteViewModel(
+            registry: registry, recentTracker: tracker
         )
     }
 
@@ -213,6 +251,10 @@ public final class ControlTowerEnvironment {
             self.folderViewModel = viewModel
             await viewModel.bootstrap()
             await wireDispatchService(paths: paths, folderViewModel: viewModel)
+            await commandRegistry.register(
+                FolderCommandProvider(folderViewModel: viewModel),
+                id: "folder"
+            )
         } catch {
             self.folderViewModel = nil
         }

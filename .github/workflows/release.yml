@@ -1,0 +1,97 @@
+name: Release
+
+# 태그 (`v*`) push 시 트리거. 인증서 secret 이 설정되어 있으면 codesign + notarize +
+# stapled DMG 산출. 미설정이면 unsigned bundle + DMG 까지만 (PR 검토용).
+#
+# 필요한 GitHub Actions secrets (Settings → Secrets):
+#   MAESTRO_SIGN_IDENTITY        codesign 인증서 이름 ("Developer ID Application: NAME (TEAM)")
+#   MAESTRO_SIGN_P12_BASE64      .p12 파일 base64
+#   MAESTRO_SIGN_P12_PASSWORD    .p12 password
+#   MAESTRO_NOTARY_APPLE_ID      Apple ID
+#   MAESTRO_NOTARY_TEAM_ID       Team ID
+#   MAESTRO_NOTARY_APP_PASSWORD  app-specific password
+#
+# secrets 없으면 sign-notarize.sh 가 자동 dry-run.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'dry-run mode (skip signing/notarization)'
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build app bundle
+        run: scripts/build-app.sh
+
+      - name: Import codesign cert
+        if: ${{ env.MAESTRO_SIGN_P12_BASE64 != '' }}
+        env:
+          P12: ${{ secrets.MAESTRO_SIGN_P12_BASE64 }}
+          P12_PASS: ${{ secrets.MAESTRO_SIGN_P12_PASSWORD }}
+        run: |
+          KEYCHAIN=maestro-build.keychain
+          security create-keychain -p actions $KEYCHAIN
+          security default-keychain -s $KEYCHAIN
+          security unlock-keychain -p actions $KEYCHAIN
+          security set-keychain-settings $KEYCHAIN
+          echo "$P12" | base64 --decode > cert.p12
+          security import cert.p12 -k $KEYCHAIN -P "$P12_PASS" -A
+          rm cert.p12
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions $KEYCHAIN
+
+      - name: Store notarytool credentials
+        if: ${{ env.MAESTRO_NOTARY_APP_PASSWORD != '' }}
+        env:
+          APPLE_ID: ${{ secrets.MAESTRO_NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.MAESTRO_NOTARY_TEAM_ID }}
+          APP_PASS: ${{ secrets.MAESTRO_NOTARY_APP_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials maestro-notary \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APP_PASS" \
+            --keychain $HOME/Library/Keychains/maestro-build.keychain-db || true
+
+      - name: Sign + notarize
+        env:
+          MAESTRO_SIGN_IDENTITY: ${{ secrets.MAESTRO_SIGN_IDENTITY }}
+          MAESTRO_NOTARY_PROFILE: maestro-notary
+        run: scripts/sign-notarize.sh
+
+      - name: Build DMG
+        run: |
+          brew install create-dmg || true
+          scripts/build-dmg.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maestro-DMG
+          path: build/Maestro-*.dmg
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/Maestro-*.dmg
+          generate_release_notes: true

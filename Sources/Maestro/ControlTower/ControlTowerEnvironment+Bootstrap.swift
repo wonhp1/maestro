@@ -6,9 +6,9 @@ import SwiftUI
 /// `ControlTowerEnvironment` bootstrap helper extension — file_length lint 회피용 분리.
 extension ControlTowerEnvironment {
     /// Phase 25 — NSException + signal handlers 등록. 글로벌 state 라 첫 호출만 의미.
+    /// I-NEW-3: crashes 디렉토리는 `AppSupportPaths.crashesDir` 가 단일 source.
     func installCrashReporter(paths: AppSupportPaths) {
-        let crashDir = paths.root.appending(path: "crashes", directoryHint: .isDirectory)
-        let reporter = CrashReporter(directory: crashDir)
+        let reporter = CrashReporter(directory: paths.crashesDir)
         reporter.install()
         // Phase v0.4.3 — 직전 실행에서 캡처된 크래시가 있으면 alert.
         showPendingCrashAlertIfNeeded(reporter: reporter)
@@ -32,11 +32,13 @@ extension ControlTowerEnvironment {
             alert.addButton(withTitle: "진단 번들 만들기")
             alert.addButton(withTitle: "나중에")
             let response = alert.runModal()
+            // I-NEW-1 fix: "나중에" 버튼은 reports 보존. dismissAll() 은 사용자가 진단
+            // 번들을 실제로 export 한 경우에만 호출 — 그래야 다음 launch 에 다시 alert.
             if response == .alertFirstButtonReturn,
                let paths = self.resolvedPaths {
                 await DiagnosticsExporter.exportInteractive(paths: paths)
+                try? reporter.dismissAll()
             }
-            try? reporter.dismissAll()
         }
     }
 
@@ -89,6 +91,18 @@ extension ControlTowerEnvironment {
         menuActionRouter.onOpenPreferences = {
             await MainActor.run {
                 _ = NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+        }
+        // I-05 fix — ⌘1~⌘9 폴더 인덱스 전환을 menu Commands 에서 호출하도록 wiring.
+        // (옛 ControlTowerView 의 .background hidden Button 은 NavigationSplitView
+        // focus 때문에 키 입력 안 받음. menu 등록은 글로벌 활성.)
+        menuActionRouter.onSelectFolderByIndex = { [weak self] index in
+            await MainActor.run {
+                guard let viewModel = self?.folderViewModel else { return }
+                let zeroBased = index - 1
+                guard zeroBased >= 0, zeroBased < viewModel.folders.count else { return }
+                let folder = viewModel.folders[zeroBased]
+                Task { await viewModel.select(id: folder.id) }
             }
         }
     }

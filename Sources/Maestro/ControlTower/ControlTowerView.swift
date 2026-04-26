@@ -82,18 +82,17 @@ struct ControlTowerView: View {
                 environment.folderListSnapshot.update(folders)
             }
         }
-        // Cmd+K — 커맨드 팔레트 열기
-        .background(
-            Button("") {
-                Task { await environment.commandPaletteViewModel.present() }
-            }
-            .keyboardShortcut("k", modifiers: [.command])
-            .opacity(0)
-            .frame(width: 0, height: 0)
-        )
-        // 폴더 단축키 ⌘1 ~ ⌘9
-        .background(folderShortcuts)
-        .sheet(isPresented: Bindable(environment.commandPaletteViewModel).isPresented) {
+        // I-05 fix — ⌘K / ⌘1~⌘9 단축키는 모두 MaestroMenuCommands 의 Window 그룹에
+        // 등록. 옛 background hidden Button 패턴은 NavigationSplitView focus 때문에
+        // 키 입력 안 받았음.
+        // .sheet 의 isPresented 는 반드시 Binding<Bool> 이어야 함. v0.4.6 까지는
+        // `Bindable(viewModel).isPresented` 라고 썼는데, 이건 Bool 값 (binding X) 이라
+        // sheet 가 처음만 표시되고 dismiss / 항목 선택 후 자동 닫힘이 동작하지 않았음
+        // (I-04). Manual Binding 으로 정정.
+        .sheet(isPresented: Binding(
+            get: { environment.commandPaletteViewModel.isPresented },
+            set: { environment.commandPaletteViewModel.isPresented = $0 }
+        )) {
             CommandPaletteView(viewModel: environment.commandPaletteViewModel)
         }
         .sheet(isPresented: $environment.showOnboarding) {
@@ -127,20 +126,6 @@ struct ControlTowerView: View {
             }
             environment.menuActionRouter.onSendFeedback = {
                 Task { @MainActor in showFeedbackSheet = true }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var folderShortcuts: some View {
-        if let folderViewModel = environment.folderViewModel {
-            ForEach(Array(folderViewModel.folders.prefix(9).enumerated()), id: \.element.id) { idx, folder in
-                Button("") {
-                    Task { await folderViewModel.select(id: folder.id) }
-                }
-                .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: [.command])
-                .opacity(0)
-                .frame(width: 0, height: 0)
             }
         }
     }
@@ -335,73 +320,91 @@ public final class ControlTowerEnvironment {
     /// production 기본 환경 — NSOpenPanelFolderPicker + AdapterSelector (Phase 24).
     /// Control 폴더는 동적 system prompt 가 주입된 별도 ClaudeAdapter (Phase 27).
     public static func makeProduction() -> ControlTowerEnvironment {
-        let candidates: [String: any AgentAdapter] = {
-            var map: [String: any AgentAdapter] = [:]
-            if let claude = try? ClaudeAdapter() {
-                map[ClaudeAdapter.id] = claude
-            }
-            if let aider = try? AiderAdapter() {
-                map[AiderAdapter.id] = aider
-            }
-            return map
-        }()
-        let mock = MockAdapter()
-        let selector = AdapterSelector(candidates: candidates, fallback: mock)
+        let candidates = collectAdapterCandidates()
+        let selector = AdapterSelector(candidates: candidates, fallback: MockAdapter())
         let registry = AdapterRegistry()
-        // 동기 register (race 차단) — actor.register 는 단순 dict 삽입이라 빠름.
-        // 사용자가 첫 launch 직후 "+ 폴더 추가" 를 눌러도 vendor picker 가 빈 상태로
-        // 뜨지 않도록 함.
-        let adaptersToRegister = Array(candidates.values)
-        let registerSemaphore = DispatchSemaphore(value: 0)
-        Task.detached { [registry] in
-            for adapter in adaptersToRegister {
-                _ = try? await registry.register(adapter)
-            }
-            registerSemaphore.signal()
-        }
-        _ = registerSemaphore.wait(timeout: .now() + .milliseconds(500))
-        // Control agent 가 매 호출 시 fresh 폴더 목록을 읽도록 thread-safe snapshot.
+        warmupAdapterRegistry(registry: registry, adapters: Array(candidates.values))
         let folderSnapshot = FolderListSnapshot()
-        let controlClaudeAdapter: ClaudeAdapter? = try? ClaudeAdapter(
-            appendSystemPromptProvider: { [folderSnapshot] in
-                let entries = folderSnapshot.read()
-                    .filter { !ControlAgentProvisioner.isControlFolder($0.id) }
-                    .map { folder in
-                        ControlAgentSystemPrompt.AgentEntry(
-                            agentID: Maestro.syntheticAgentID(for: folder.id).rawValue,
-                            displayName: folder.displayName,
-                            folderPath: folder.path.path
-                        )
-                    }
-                return ControlAgentSystemPrompt.build(agents: entries)
-            }
-        )
+        let controlClaudeAdapter = makeControlClaudeAdapter(folderSnapshot: folderSnapshot)
         return ControlTowerEnvironment(
             pathsProvider: { try AppSupportPaths.forApplication() },
             pickerFactory: { NSOpenPanelFolderPicker() },
-            chatViewModelFactory: { [selector, controlClaudeAdapter] folder in
-                // Control 폴더 + adapterId == "claude" → 동적 system prompt 주입된 ClaudeAdapter.
-                // 사용자가 control 폴더 어댑터를 다른 vendor 로 변경한 경우 일반 selector 경로로
-                // 폴백 — system prompt 자동 주입은 Claude 전용 (Phase v0.4.6 한계, Aider
-                // wire-in 은 v0.4.7 후속).
-                if ControlAgentProvisioner.isControlFolder(folder.id),
-                   folder.adapterId.rawValue == "claude",
-                   let ctrl = controlClaudeAdapter {
-                    let session = try await ctrl.createSession(folderPath: folder.path)
-                    return try ChatViewModel(adapter: ctrl, session: session)
-                }
-                let adapter = await selector.select(
-                    preferred: folder.adapterId.rawValue,
-                    enabled: ["claude", "aider"]
-                )
-                let session = try await adapter.createSession(folderPath: folder.path)
-                return try ChatViewModel(adapter: adapter, session: session)
-            },
+            chatViewModelFactory: makeChatViewModelFactory(
+                selector: selector, controlClaudeAdapter: controlClaudeAdapter
+            ),
             adapterSelector: selector,
             adapterRegistry: registry,
             discussionStore: DiscussionStore(),
             folderListSnapshot: folderSnapshot
         )
+    }
+
+    private static func collectAdapterCandidates() -> [String: any AgentAdapter] {
+        var map: [String: any AgentAdapter] = [:]
+        if let claude = try? ClaudeAdapter() { map[ClaudeAdapter.id] = claude }
+        if let aider = try? AiderAdapter() { map[AiderAdapter.id] = aider }
+        return map
+    }
+
+    /// 동기 register (race 차단) — actor.register 는 단순 dict 삽입이라 빠름.
+    /// 사용자가 첫 launch 직후 "+ 폴더 추가" 를 눌러도 vendor picker 가 빈 상태로
+    /// 뜨지 않도록 함.
+    private static func warmupAdapterRegistry(
+        registry: AdapterRegistry, adapters: [any AgentAdapter]
+    ) {
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached { [registry] in
+            for adapter in adapters { _ = try? await registry.register(adapter) }
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + .milliseconds(500))
+    }
+
+    private static func makeControlClaudeAdapter(
+        folderSnapshot: FolderListSnapshot
+    ) -> ClaudeAdapter? {
+        try? ClaudeAdapter(appendSystemPromptProvider: { [folderSnapshot] in
+            let entries = folderSnapshot.read()
+                .filter { !ControlAgentProvisioner.isControlFolder($0.id) }
+                .map { folder in
+                    ControlAgentSystemPrompt.AgentEntry(
+                        agentID: Maestro.syntheticAgentID(for: folder.id).rawValue,
+                        displayName: folder.displayName,
+                        folderPath: folder.path.path
+                    )
+                }
+            return ControlAgentSystemPrompt.build(agents: entries)
+        })
+    }
+
+    /// Control 폴더 + adapterId == "claude" → 동적 system prompt 주입된 ClaudeAdapter.
+    /// 사용자가 control 폴더 어댑터를 다른 vendor 로 변경한 경우 일반 selector 경로로
+    /// 폴백 — system prompt 자동 주입은 Claude 전용 (Phase v0.4.6 한계).
+    /// I-NEW-2 — folder 에 영속된 sessionId 를 어댑터에 전달해 prior 대화 재개.
+    private static func makeChatViewModelFactory(
+        selector: AdapterSelector,
+        controlClaudeAdapter: ClaudeAdapter?
+    ) -> @MainActor (FolderRegistration) async throws -> ChatViewModel {
+        return { folder in
+            if ControlAgentProvisioner.isControlFolder(folder.id),
+               folder.adapterId.rawValue == "claude",
+               let ctrl = controlClaudeAdapter {
+                let session = try await ctrl.createSession(
+                    folderPath: folder.path,
+                    preferredSessionId: folder.sessionId
+                )
+                return try ChatViewModel(adapter: ctrl, session: session)
+            }
+            let adapter = await selector.select(
+                preferred: folder.adapterId.rawValue,
+                enabled: ["claude", "aider"]
+            )
+            let session = try await adapter.createSession(
+                folderPath: folder.path,
+                preferredSessionId: folder.sessionId
+            )
+            return try ChatViewModel(adapter: adapter, session: session)
+        }
     }
 
     /// UI 의 "보내기" 액션을 DispatchService 로 전달.
@@ -448,6 +451,11 @@ public final class ControlTowerEnvironment {
             await viewModel.bootstrap()  // 새로 추가된 control 폴더 reload
             // folderListSnapshot 갱신 (control adapter 의 system prompt 가 읽음)
             self.folderListSnapshot.update(viewModel.folders)
+            // I-NEW-2 — 새 ChatViewModel 의 sessionId 를 folder 에 persist.
+            chatSessionStore.onSessionCreated = { [weak registry] folderID, sessionID in
+                guard let registry else { return }
+                try? await registry.setSessionId(id: folderID, sessionId: sessionID)
+            }
             await wireDispatchService(paths: paths, folderViewModel: viewModel)
             await commandRegistry.register(
                 FolderCommandProvider(folderViewModel: viewModel),

@@ -141,6 +141,18 @@ public actor FolderRegistry {
         return folder
     }
 
+    /// I-NEW-2 fix — 폴더의 영속 sessionId 갱신. ChatSessionStore 가 세션을 처음
+    /// 만들 때 호출하여 다음 launch 가 같은 ID 로 `claude --resume` 가능.
+    public func setSessionId(id: FolderID, sessionId: SessionID) async throws {
+        guard let index = folders.firstIndex(where: { $0.id == id }) else {
+            throw FolderRegistryError.notFound(id: id)
+        }
+        guard folders[index].sessionId != sessionId else { return }
+        folders[index].sessionId = sessionId
+        try await persist()
+        broadcast(.updated(folders[index]))
+    }
+
     /// 폴더 사용 시각 업데이트 (UI 에서 폴더 클릭 시 호출).
     public func touch(id: FolderID, now: Date = Date()) async throws {
         guard let index = folders.firstIndex(where: { $0.id == id }) else {

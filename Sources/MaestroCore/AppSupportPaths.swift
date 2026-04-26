@@ -64,6 +64,7 @@ public struct AppSupportPaths: Sendable {
     public var threadsDir: URL { root.appending(path: "threads", directoryHint: .isDirectory) }
     public var failedDir: URL { root.appending(path: "failed", directoryHint: .isDirectory) }
     public var logsDir: URL { root.appending(path: "logs", directoryHint: .isDirectory) }
+    public var crashesDir: URL { root.appending(path: "crashes", directoryHint: .isDirectory) }
 
     // MARK: Per-entity paths
 
@@ -112,7 +113,7 @@ public struct AppSupportPaths: Sendable {
     ) throws {
         let allDirs = [
             root, sessionsDir, agentsDir, inboxRoot, outboxRoot,
-            threadsDir, failedDir, logsDir,
+            threadsDir, failedDir, logsDir, crashesDir,
         ]
         for dir in allDirs {
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -23,11 +23,41 @@ extension ControlTowerEnvironment {
             resolver: resolver
         )
         let observer = makeObserver(folderViewModel: folderViewModel)
-        self.dispatchService = DispatchService(
+        let service = DispatchService(
             router: router,
             resolver: resolver,
             observer: observer
         )
+        self.dispatchService = service
+        await wireControlMainChatRelay(folderViewModel: folderViewModel, service: service)
+    }
+
+    /// I-03 fix — control 폴더의 main chat input 으로 들어온 응답에 RELAY_TO 가 있으면
+    /// DispatchService 로 spawn. ChatViewModel.send 가 adapter 만 호출하고 끝나므로
+    /// 외부에서 onAssistantResponseComplete 훅을 set 해 둠.
+    private func wireControlMainChatRelay(
+        folderViewModel: FolderViewModel,
+        service: DispatchService
+    ) async {
+        let controlFolder = folderViewModel.folders.first { folder in
+            ControlAgentProvisioner.isControlFolder(folder.id)
+        }
+        guard let controlFolder else { return }
+        guard let chatVM = await chatSessionStore.ensureSession(for: controlFolder) else { return }
+        let parser = ReplyParser()
+        let controlAgent = AgentID(rawValue: "control")
+        chatVM.onAssistantResponseComplete = { [weak service] body in
+            guard let service else { return }
+            let parsed = parser.parse(body)
+            for relay in parsed.relays {
+                _ = try? await service.dispatch(
+                    from: controlAgent,
+                    to: relay.target,
+                    body: relay.body,
+                    expectReply: true
+                )
+            }
+        }
     }
 
     private func makeObserver(

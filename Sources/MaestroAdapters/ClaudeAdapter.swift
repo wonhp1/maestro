@@ -80,8 +80,16 @@ public actor ClaudeAdapter: AgentAdapter {
     }
 
     public func createSession(folderPath: URL) async throws -> Session {
-        let sessionId = SessionID.new()
-        // Phase 7 must-fix: folderPath symlink 사전 해제 — TOCTOU 방지.
+        try await createSession(folderPath: folderPath, preferredSessionId: nil)
+    }
+
+    /// I-NEW-2 fix — preferredSessionId 가 주어지면 그 ID 로 세션을 만들고, 디스크에
+    /// 같은 이름의 JSONL 이 이미 있으면 다음 send 부터 자동으로 `--resume <id>` 사용.
+    /// (initializedSessions 에 미리 등록 → sendMessage 가 isFirst=false 분기.)
+    public func createSession(
+        folderPath: URL, preferredSessionId: SessionID?
+    ) async throws -> Session {
+        let sessionId = preferredSessionId ?? SessionID.new()
         let resolvedFolder = folderPath.resolvingSymlinksInPath()
         let now = Date()
         let session = Session(
@@ -94,8 +102,30 @@ public actor ClaudeAdapter: AgentAdapter {
             status: .active
         )
         sessions[sessionId] = session
-        logger.info("createSession id=\(sessionId.rawValue) folder=\(resolvedFolder.path)")
+        // preferredSessionId 가 있고 해당 JSONL 이 이미 존재하면 첫 send 부터 --resume.
+        if preferredSessionId != nil, sessionFileExists(sessionId, in: resolvedFolder) {
+            initializedSessions.insert(sessionId)
+            logger.info("createSession resume id=\(sessionId.rawValue) folder=\(resolvedFolder.path)")
+        } else {
+            logger.info("createSession new id=\(sessionId.rawValue) folder=\(resolvedFolder.path)")
+        }
         return session
+    }
+
+    /// `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` 존재 여부를 brute-force
+    /// 검색. claude 의 경로 인코딩 규칙을 정확히 모르니 최상위 polling 으로 확인.
+    private func sessionFileExists(_ id: SessionID, in folder: URL) -> Bool {
+        let projectsRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".claude/projects", directoryHint: .isDirectory)
+        let target = "\(id.rawValue).jsonl"
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            atPath: projectsRoot.path
+        ) else { return false }
+        for dir in entries {
+            let path = projectsRoot.appending(path: dir).appending(path: target)
+            if FileManager.default.fileExists(atPath: path.path) { return true }
+        }
+        return false
     }
 
     public func destroySession(_ id: SessionID) async throws {

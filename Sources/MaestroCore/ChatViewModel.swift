@@ -31,6 +31,11 @@ public final class ChatViewModel {
     /// nonisolated read 안전 (immutable + Sendable AgentAdapter / Session).
     nonisolated public let adapter: any AgentAdapter
     nonisolated public let session: Session
+    /// I-03 fix — control 의 ChatViewModel 처럼 main chat input 으로 들어온 응답이
+    /// `<RELAY_TO=...>` 태그를 가질 때 DispatchService 로 전달해야 하는 경우, 외부에서
+    /// 이 콜백을 set 해 둠. 스트림이 정상 종료된 직후 (placeholder .complete) assistant
+    /// 본문 전체를 한 번 호출. nil 이면 no-op.
+    public var onAssistantResponseComplete: (@MainActor (String) async -> Void)?
     private let userAgentId: AgentID
     private let assistantAgentId: AgentID
     private var streamingTask: Task<Void, Never>?
@@ -131,6 +136,12 @@ public final class ChatViewModel {
             // 정상 종료 — placeholder 가 여전히 활성일 때만 .complete.
             if activePlaceholderID == placeholderID {
                 updateStatus(of: placeholderID, to: .complete)
+                // I-03 fix — 완성된 본문에서 RELAY_TO 처리할 수 있게 외부 hook 호출.
+                if let callback = onAssistantResponseComplete,
+                   let idx = messages.firstIndex(where: { $0.id == placeholderID }) {
+                    let body = messages[idx].content
+                    await callback(body)
+                }
             }
         } catch is CancellationError {
             // cancel() 이 이미 .cancelled 로 설정 — 재설정 안 함. lastError 도 안 set.

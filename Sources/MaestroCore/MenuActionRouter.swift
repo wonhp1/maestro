@@ -42,6 +42,9 @@ public final class MenuActionRouter {
     /// 피드백 전송 시트 열기 (Phase 25).
     @ObservationIgnored
     public var onSendFeedback: (@Sendable () async -> Void)?
+    /// I-05 fix — ⌘1~⌘9 폴더 인덱스 전환. 1-based index, out-of-range silently no-op.
+    @ObservationIgnored
+    public var onSelectFolderByIndex: (@Sendable (Int) async -> Void)?
 
     public var canDeleteSelectedFolder: Bool = false
 
@@ -87,5 +90,10 @@ public final class MenuActionRouter {
     public func sendFeedback() {
         guard let handler = onSendFeedback else { return }
         Task { await handler() }
+    }
+
+    public func selectFolder(at index: Int) {
+        guard let handler = onSelectFolderByIndex else { return }
+        Task { await handler(index) }
     }
 }

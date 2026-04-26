@@ -28,21 +28,29 @@ struct MaestroMenuCommands: Commands {
                 .disabled(!router.canDeleteSelectedFolder)
         }
 
-        // Maestro 메뉴 (앱 메뉴) — 환경설정 + 업데이트 확인 (Phase 26)
-        CommandGroup(replacing: .appSettings) {
-            Button("환경설정…") { router.openPreferences() }
-                .keyboardShortcut(",", modifiers: [.command])
-        }
+        // Maestro 앱 메뉴 — 업데이트 확인. 환경설정 항목은 SwiftUI 가 Settings scene
+        // 등록 시 자동 생성 (현재 시스템 언어 따라 "환경설정..." / "Settings..." 자동
+        // 번역, ⌘, 단축키 자동 wire). v0.4.6 까지는 .appSettings 를 replacing 으로
+        // 덮어 NSApp.sendAction(showSettingsWindow:) 로 invoke 했는데 SwiftUI 가
+        // 그 selector 를 일관되게 처리하지 않아 Settings 창이 안 열리는 버그 (I-06).
+        // v0.4.7 에서 표준 자동 항목 사용으로 회귀 — 동시에 메뉴 중복 (I-07) 해결.
         CommandGroup(after: .appInfo) {
             Button("업데이트 확인…") { updateController.checkForUpdates() }
                 .disabled(!updateController.canCheckForUpdates)
         }
 
-        // Window — 커맨드 팔레트 열기 (Cmd+K 는 ControlTowerView 도 등록, 메뉴는 발견성)
+        // Window — 커맨드 팔레트 + 폴더 인덱스 전환 (⌘1~⌘9)
+        // I-05 fix: ⌘1~⌘9 는 ControlTowerView 의 hidden background Button 으로는
+        // NavigationSplitView focus 때문에 키 입력 안 받음. menu Commands 로 옮김.
         CommandGroup(after: .windowList) {
             Divider()
             Button("커맨드 팔레트") { router.openCommandPalette() }
                 .keyboardShortcut("k", modifiers: [.command])
+            Divider()
+            ForEach(1...9, id: \.self) { index in
+                Button("폴더 \(index) 전환") { router.selectFolder(at: index) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: [.command])
+            }
         }
 
         // Help

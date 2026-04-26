@@ -20,6 +20,11 @@ public struct FolderRegistration: Codable, Hashable, Sendable, Identifiable {
     public var adapterId: AdapterID
     public let createdAt: Date
     public var lastUsedAt: Date?
+    /// I-NEW-2 fix — 폴더 단위로 영속하는 어댑터 세션 ID. 첫 ChatViewModel 생성 시
+    /// `SessionID.new()` 로 발급하고 즉시 디스크에 저장. 이후 같은 폴더를 재선택하면
+    /// 동일 ID 로 어댑터 createSession → adapter 가 `claude --resume <id>` 로 재개.
+    /// nil 이면 fresh ID. 마이그레이션: 기존 folders.json 에 키 없으면 nil 로 디코딩.
+    public var sessionId: SessionID?
 
     public init(
         id: FolderID = .new(),
@@ -27,7 +32,8 @@ public struct FolderRegistration: Codable, Hashable, Sendable, Identifiable {
         path: URL,
         adapterId: AdapterID,
         createdAt: Date = Date(),
-        lastUsedAt: Date? = nil
+        lastUsedAt: Date? = nil,
+        sessionId: SessionID? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -35,6 +41,7 @@ public struct FolderRegistration: Codable, Hashable, Sendable, Identifiable {
         self.adapterId = adapterId
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
+        self.sessionId = sessionId
     }
 
     /// 표시 이름 검증 — 등록/업데이트 진입점.

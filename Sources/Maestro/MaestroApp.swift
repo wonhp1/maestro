@@ -78,9 +78,10 @@ struct MaestroApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(
-            String(localized: String.LocalizationValue(MaestroConfig.defaultWindowTitleKey))
-        ) {
+        // I-01 fix — String Catalog 미도입 상태에서 LocalizationValue("window.main.title")
+        // 가 키를 그대로 표시하던 버그. literal "Maestro" 로 폴백 (Phase 22 의 정식 다국어
+        // 카탈로그 진입 시 다시 localized 화).
+        WindowGroup("Maestro") {
             ContentView(environment: environment)
                 .frame(
                     minWidth: MaestroConfig.minimumWindowSize.width,

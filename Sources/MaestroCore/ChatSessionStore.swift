@@ -35,6 +35,11 @@ public final class ChatSessionStore {
     @ObservationIgnored
     private var inFlightTasks: [FolderID: Task<ChatViewModel?, Never>] = [:]
 
+    /// I-NEW-2 fix — factory 가 새 ChatViewModel 의 session.id 를 발급한 직후 호출.
+    /// 호스트가 이 hook 으로 FolderRegistry 에 sessionId 를 persist 하면 다음 launch
+    /// 가 같은 ID 로 `claude --resume` 가능. nil 이면 no-op (테스트 호환).
+    public var onSessionCreated: (@MainActor (FolderID, SessionID) async -> Void)?
+
     public init(
         factory: @escaping ChatViewModelFactory,
         statusStore: AgentStatusStore
@@ -65,6 +70,9 @@ public final class ChatSessionStore {
                 self.sessions[folder.id] = viewModel
                 self.lastErrors[folder.id] = nil
                 statusStore.setIdle(folder.id)
+                if let hook = self.onSessionCreated {
+                    await hook(folder.id, viewModel.session.id)
+                }
                 return Optional(viewModel)
             } catch {
                 self.lastErrors[folder.id] = error.localizedDescription

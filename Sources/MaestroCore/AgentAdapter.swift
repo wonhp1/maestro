@@ -34,6 +34,15 @@ public protocol AgentAdapter: Sendable {
     /// 폴더 컨텍스트로 새 세션 생성. 어댑터가 CLI 프로세스 spawn 또는 세션 메타 등록.
     func createSession(folderPath: URL) async throws -> Session
 
+    /// I-NEW-2 fix — 사용자가 같은 폴더를 재선택했을 때 prior conversation history
+    /// 를 살리려면 동일한 SessionID 로 `claude --resume` 가 가능해야 함. 호출자가
+    /// folder 단위로 영속한 ID 를 넘기면 어댑터가 그 ID 로 세션을 만들고, 첫 send 가
+    /// 자동으로 `--resume` 경로를 타게 함. nil 이면 기존 동작 (새 ID).
+    /// 기본 구현은 preferredSessionId 무시 → 기존 createSession 호출 (mock/aider 호환).
+    func createSession(
+        folderPath: URL, preferredSessionId: SessionID?
+    ) async throws -> Session
+
     /// 세션 종료. 자식 프로세스/리소스 정리.
     func destroySession(_ id: SessionID) async throws
 
@@ -90,6 +99,14 @@ public extension AgentAdapter {
 
     /// 기본 구현: 슬래시 명령 없음. 어댑터가 동적 카탈로그를 가지면 오버라이드.
     func listSlashCommands(in session: Session) async -> [SlashCommand] { [] }
+
+    /// 기본 구현: preferredSessionId 무시 + 기존 createSession 호출. ClaudeAdapter
+    /// 가 override 해서 ID 보존.
+    func createSession(
+        folderPath: URL, preferredSessionId: SessionID?
+    ) async throws -> Session {
+        try await createSession(folderPath: folderPath)
+    }
 
     /// 기본 아이콘 — 미설정 어댑터용 fallback.
     static var iconName: String { "terminal" }

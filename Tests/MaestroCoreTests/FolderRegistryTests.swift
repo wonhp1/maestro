@@ -181,6 +181,25 @@ final class FolderRegistryTests: XCTestCase {
         XCTAssertEqual(updated?.lastUsedAt, now)
     }
 
+    func testSetSessionIdPersistsAcrossReload() async throws {
+        let registry = FolderRegistry(paths: paths)
+        try await registry.loadFromDisk()
+        let dir = try makeFolder()
+        let r = try await registry.add(
+            displayName: "X", path: dir, adapterId: AdapterID(rawValue: "claude")
+        )
+        XCTAssertNil(r.sessionId)
+        let sid = SessionID.new()
+        try await registry.setSessionId(id: r.id, sessionId: sid)
+        let updated = await registry.get(id: r.id)
+        XCTAssertEqual(updated?.sessionId, sid)
+        // 디스크 round-trip
+        let registry2 = FolderRegistry(paths: paths)
+        try await registry2.loadFromDisk()
+        let rehydrated = await registry2.get(id: r.id)
+        XCTAssertEqual(rehydrated?.sessionId, sid)
+    }
+
     // MARK: - Persistence round-trip
 
     func testRegistryRehydratesAcrossInstances() async throws {

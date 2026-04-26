@@ -51,6 +51,16 @@ if [[ -f "Resources/AppIcon.icns" ]]; then
 fi
 
 # 3. Info.plist
+# I-02 fix: MAESTRO_SPARKLE_PUBLIC_KEY 가 비어있으면 SUPublicEDKey / SUFeedURL /
+# SUEnableAutomaticChecks 를 통째로 omit. Sparkle 이 placeholder 로 launch-time
+# alert "Unable to Check For Updates" 띄우는 것 방지. CI release build 가 환경 변수
+# 주입하면 정상 자동 업데이트 활성화.
+SPARKLE_KEY="${MAESTRO_SPARKLE_PUBLIC_KEY:-}"
+SPARKLE_BLOCK=""
+if [[ -n "$SPARKLE_KEY" ]]; then
+    SPARKLE_FEED="${MAESTRO_APPCAST_URL:-https://wonhp1.github.io/maestro/appcast.xml}"
+    SPARKLE_BLOCK=$'    <key>SUFeedURL</key><string>'"$SPARKLE_FEED"$'</string>\n    <key>SUPublicEDKey</key><string>'"$SPARKLE_KEY"$'</string>\n    <key>SUEnableAutomaticChecks</key><true/>\n    <key>SUScheduledCheckInterval</key><integer>86400</integer>\n'
+fi
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -69,11 +79,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<EOF
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSUserNotificationAlertStyle</key><string>alert</string>
-    <key>SUFeedURL</key><string>${MAESTRO_APPCAST_URL:-https://wonhp1.github.io/maestro/appcast.xml}</string>
-    <key>SUPublicEDKey</key><string>${MAESTRO_SPARKLE_PUBLIC_KEY:-}</string>
-    <key>SUEnableAutomaticChecks</key><true/>
-    <key>SUScheduledCheckInterval</key><integer>86400</integer>
-</dict>
+${SPARKLE_BLOCK}</dict>
 </plist>
 EOF
 

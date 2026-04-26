@@ -14,6 +14,17 @@ struct CommandPaletteView: View {
             queryField
             Divider()
             resultsList
+            // I-04 fix: hidden Button 으로 Enter/Esc 를 sheet 어느 곳에서 눌러도
+            // 받을 수 있게. List 가 selection 만 먹고 .onSubmit 을 흘려보내는 SwiftUI
+            // macOS 버그 우회.
+            Group {
+                Button("") { Task { await viewModel.executeSelected() } }
+                    .keyboardShortcut(.return, modifiers: [])
+                Button("") { viewModel.dismiss() }
+                    .keyboardShortcut(.escape, modifiers: [])
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
         }
         .frame(width: 540, height: 420)
         .background(.ultraThinMaterial)

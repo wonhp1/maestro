@@ -72,9 +72,11 @@ struct ControlTowerView: View {
             dockBadgeUpdater?.stop()
             dockBadgeUpdater = nil
         }
-        // canDeleteSelectedFolder 동기화
+        // canDeleteSelectedFolder 동기화 + I-NEW-8 fix (어떤 경로로든 폴더가 바뀌면
+        // 기존 discussion 표시 자동 해제 — palette/⌘1-9/사이드바 모두 통일).
         .onChange(of: environment.folderViewModel?.selectedFolderID) { _, newValue in
             environment.menuActionRouter.canDeleteSelectedFolder = newValue != nil
+            if newValue != nil { environment.selectedDiscussionID = nil }
         }
         // Phase 27 — folder 변화 시 control agent 가 읽는 snapshot 갱신
         .onChange(of: environment.folderViewModel?.folders.count) { _, _ in

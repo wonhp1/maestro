@@ -141,6 +141,10 @@ struct SidebarView: View {
                     viewModel.selectedFolderID = nil
                     return
                 }
+                // I-NEW-8 fix — 폴더를 명시적으로 클릭하면 표시 중인 discussion 을
+                // 자동으로 닫음. 안 그러면 detailContent 가 discussion 을 우선해서
+                // 사용자 클릭이 무시된 것처럼 보임.
+                selectedDiscussionID.wrappedValue = nil
                 Task { await viewModel.select(id: id) }
             }
         )) {

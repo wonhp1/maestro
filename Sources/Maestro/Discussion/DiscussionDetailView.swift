@@ -177,7 +177,7 @@ struct DiscussionDetailView: View {
                     Task { await viewModel.terminate() }
                 }
             case .completed, .aborted:
-                Text(viewModel.terminationReason.map { "사유: \($0.rawValue)" } ?? "종료")
+                Text(viewModel.terminationReason.map { "사유: \($0.localizedDescription)" } ?? "종료")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

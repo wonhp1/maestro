@@ -35,6 +35,17 @@ public actor DiscussionEngine {
         case userTerminated
         case errorThreshold
         case moderatorTimeout
+
+        /// I-NEW-7 fix — UI 에 노출되는 한국어 친절 설명. 디버그용 rawValue 와 분리.
+        public var localizedDescription: String {
+            switch self {
+            case .maxTurnsReached: return "최대 턴 수 도달"
+            case .moderatorReturnedNil: return "더 발언할 참가자가 없음"
+            case .userTerminated: return "사용자가 종료"
+            case .errorThreshold: return "오류가 누적되어 자동 중단"
+            case .moderatorTimeout: return "다음 발언자 결정 시간 초과"
+            }
+        }
     }
 
     /// `moderator.nextSpeaker` 호출 timeout — LLM moderator 향후 고려 (must-fix MED-5).

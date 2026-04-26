@@ -98,10 +98,12 @@ extension ControlTowerEnvironment {
         // focus 때문에 키 입력 안 받음. menu 등록은 글로벌 활성.)
         menuActionRouter.onSelectFolderByIndex = { [weak self] index in
             await MainActor.run {
-                guard let viewModel = self?.folderViewModel else { return }
+                guard let env = self, let viewModel = env.folderViewModel else { return }
                 let zeroBased = index - 1
                 guard zeroBased >= 0, zeroBased < viewModel.folders.count else { return }
                 let folder = viewModel.folders[zeroBased]
+                // I-NEW-8 — discussion 활성 시 ⌘1~⌘9 가 무시되지 않도록 clear.
+                env.selectedDiscussionID = nil
                 Task { await viewModel.select(id: folder.id) }
             }
         }

@@ -89,6 +89,8 @@ public final class ChatSessionStore {
 
     /// 캐시에서 제거 + 상태 초기화 (폴더 삭제 시).
     public func evict(folderID: FolderID) {
+        // v0.4.8 — evict 직전 ChatViewModel 의 외부 참조 (closure 등) 명시 release.
+        sessions[folderID]?.releaseExternalReferences()
         sessions.removeValue(forKey: folderID)
         lastErrors.removeValue(forKey: folderID)
         inFlightTasks[folderID]?.cancel()
@@ -98,6 +100,7 @@ public final class ChatSessionStore {
 
     /// 모든 세션 evict (앱 종료 / 진단 시).
     public func evictAll() {
+        for vm in sessions.values { vm.releaseExternalReferences() }
         sessions.removeAll()
         lastErrors.removeAll()
         for task in inFlightTasks.values { task.cancel() }

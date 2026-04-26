@@ -49,6 +49,16 @@ public final class ChatViewModel {
         self.assistantAgentId = session.agentId
     }
 
+    /// v0.4.8 memory-reviewer 권고 — `onAssistantResponseComplete` 가 외부에서 set 된
+    /// 클로저라, evict 시 묵시적으로 풀리게 두면 클로저가 캡처한 service 가 잠시
+    /// 더 살아있을 수 있음. ChatSessionStore.evict 가 호출 시 명시적으로 클리어.
+    /// `deinit` 은 MainActor 격리 깨므로 별도 메서드로.
+    public func releaseExternalReferences() {
+        onAssistantResponseComplete = nil
+        streamingTask?.cancel()
+        streamingTask = nil
+    }
+
     /// 사용자 입력 전송 — `draft` 를 비우고 비동기 스트림 시작.
     /// 이미 streaming 중이거나 draft 가 비어있으면 no-op.
     public func send() {

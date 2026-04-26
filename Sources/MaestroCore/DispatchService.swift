@@ -118,40 +118,70 @@ public actor DispatchService {
         // 4. RELAY_TO 처리 — depth cap 안에서 재귀 dispatch.
         // v0.4.6: expectReply: true 로 변경 + observer 에 결과 통지 → parent 의
         // ChatView 에 자식 응답이 follow-up 으로 표시됨.
+        // v0.4.8: 모든 relay 를 **withTaskGroup 으로 동시 dispatch** (이전엔 for-loop
+        //   await 라 자식 1명 끝날 때까지 다음 자식 대기 — bug 2). 어차피 child
+        //   process 가 다 다른 cwd 에서 spawn 되므로 race 없음.
         let parsed = parser.parse(reply.body)
         if !parsed.relays.isEmpty, relayDepth < maxRelayDepth {
-            for relay in parsed.relays {
+            await dispatchRelaysInParallel(
+                parentEnvelope: envelope,
+                parentReply: reply,
+                relays: parsed.relays,
+                relayDepth: relayDepth
+            )
+        }
+
+        return expectReply ? reply : nil
+    }
+
+    private func dispatchRelaysInParallel(
+        parentEnvelope: MessageEnvelope,
+        parentReply: MessageEnvelope,
+        relays: [InlineRelay],
+        relayDepth: Int
+    ) async {
+        let nextDepth = relayDepth + 1
+        let parentFrom = parentReply.from
+        let threadId = parentEnvelope.threadId
+        await withTaskGroup(
+            of: (MessageEnvelope, MessageEnvelope?)?.self
+        ) { group in
+            for relay in relays {
                 guard (try? await resolver.resolve(agent: relay.target)) != nil else {
                     await observer.relaySkipped(
-                        from: reply.from, to: relay.target,
+                        from: parentFrom, to: relay.target,
                         reason: "unknown agent"
                     )
                     continue
                 }
                 let safeRelayBody = sanitizeOutgoingBody(relay.body)
                 let relayEnvelope = MessageEnvelope.task(
-                    from: reply.from,
+                    from: parentFrom,
                     to: relay.target,
                     body: safeRelayBody,
-                    thread: envelope.threadId
+                    thread: threadId
                 )
-                let relayReply = try? await dispatchInternal(
-                    envelope: relayEnvelope,
-                    expectReply: true,
-                    relayDepth: relayDepth + 1
-                )
-                if let relayReply {
-                    await observer.relayResultArrived(
-                        parentEnvelope: envelope,
-                        parentReply: reply,
-                        relayRequest: relayEnvelope,
-                        relayReply: relayReply
+                group.addTask { [weak self] in
+                    guard let self else { return nil }
+                    let relayReply = try? await self.dispatchInternal(
+                        envelope: relayEnvelope,
+                        expectReply: true,
+                        relayDepth: nextDepth
                     )
+                    return (relayEnvelope, relayReply)
                 }
             }
+            for await result in group {
+                guard let (relayEnvelope, relayReply) = result,
+                      let relayReply else { continue }
+                await observer.relayResultArrived(
+                    parentEnvelope: parentEnvelope,
+                    parentReply: parentReply,
+                    relayRequest: relayEnvelope,
+                    relayReply: relayReply
+                )
+            }
         }
-
-        return expectReply ? reply : nil
     }
 
     private func withTimeout<T: Sendable>(

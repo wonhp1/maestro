@@ -35,6 +35,11 @@ extension ControlTowerEnvironment {
     /// I-03 fix — control 폴더의 main chat input 으로 들어온 응답에 RELAY_TO 가 있으면
     /// DispatchService 로 spawn. ChatViewModel.send 가 adapter 만 호출하고 끝나므로
     /// 외부에서 onAssistantResponseComplete 훅을 set 해 둠.
+    /// **NEW v0.4.8**:
+    /// - 자식 응답을 control chat 에 follow-up bubble 로 append (이전엔 dispatch 결과
+    ///   를 `_` 로 버려서 control 화면엔 안 떴음 — bug 1).
+    /// - withTaskGroup 으로 모든 자식에게 동시 dispatch (이전엔 for-loop await 라 1명
+    ///   응답 끝날 때까지 다음 자식 대기 — bug 2).
     private func wireControlMainChatRelay(
         folderViewModel: FolderViewModel,
         service: DispatchService
@@ -46,16 +51,39 @@ extension ControlTowerEnvironment {
         guard let chatVM = await chatSessionStore.ensureSession(for: controlFolder) else { return }
         let parser = ReplyParser()
         let controlAgent = AgentID(rawValue: "control")
-        chatVM.onAssistantResponseComplete = { [weak service] body in
-            guard let service else { return }
+        chatVM.onAssistantResponseComplete = { [weak service, weak chatVM, weak folderViewModel] body in
+            guard let service, let chatVM, let folderViewModel else { return }
             let parsed = parser.parse(body)
+            guard !parsed.relays.isEmpty else { return }
+            // 모든 자식에게 **동시 dispatch** + 응답을 **발행 순서대로** chat 에 append.
+            // (TaskGroup 의 yield 순서는 completion 순서라, 응답 시간이 섞이면 사용자가
+            // 발행 순서를 잃음. 결과를 dict 에 모은 뒤 relays 순회로 재정렬.)
+            var collected: [AgentID: MessageEnvelope] = [:]
+            await withTaskGroup(of: (AgentID, MessageEnvelope?).self) { group in
+                for relay in parsed.relays {
+                    group.addTask { [service] in
+                        let reply = (try? await service.dispatch(
+                            from: controlAgent,
+                            to: relay.target,
+                            body: relay.body,
+                            expectReply: true
+                        )).flatMap { $0 }
+                        return (relay.target, reply)
+                    }
+                }
+                for await (target, reply) in group {
+                    if let reply { collected[target] = reply }
+                }
+            }
+            // 발행 순서대로 follow-up bubble append (chatVM 은 @MainActor — 클로저
+            // 자체가 ChatViewModel 의 onAssistantResponseComplete 시그니처상 MainActor).
+            guard let chatVMStrong = chatVM as ChatViewModel? else { return }
             for relay in parsed.relays {
-                _ = try? await service.dispatch(
-                    from: controlAgent,
-                    to: relay.target,
-                    body: relay.body,
-                    expectReply: true
-                )
+                guard let reply = collected[relay.target] else { continue }
+                let label = folderViewModel.folders.first { f in
+                    Maestro.syntheticAgentID(for: f.id) == relay.target
+                }?.displayName ?? relay.target.rawValue
+                chatVMStrong.appendRelayResult(from: label, body: reply.body)
             }
         }
     }
@@ -79,7 +107,17 @@ extension ControlTowerEnvironment {
         return { [weak folderViewModel] agentID in
             guard let folderViewModel else { return nil }
             return await MainActor.run {
-                folderViewModel.folders.first { folder in
+                // HIGH fix (v0.4.8) — control 메타 에이전트는 합성 ID 가 아닌 literal
+                // "control" 로 dispatch 됨 (wireControlMainChatRelay 의 controlAgent).
+                // reply.to == "control" 이 어떤 폴더의 syntheticAgentID 와도 매치
+                // 안 돼 replyReceived() 의 fallback 이 reply.from 으로 가서 자식
+                // 폴더 inbox 에 잘못 기록됐던 사용자 보고 1번 ("보고함 안 옴") 의 root cause.
+                if agentID.rawValue == "control" {
+                    return folderViewModel.folders.first(where: { folder in
+                        ControlAgentProvisioner.isControlFolder(folder.id)
+                    })?.id
+                }
+                return folderViewModel.folders.first { folder in
                     Maestro.syntheticAgentID(for: folder.id) == agentID
                 }?.id
             }

@@ -175,9 +175,20 @@ public actor DispatchService {
 
 private struct DispatchTimeoutError: Error {}
 
-public enum DispatchServiceError: Error, Equatable, Sendable {
+public enum DispatchServiceError: LocalizedError, Equatable, Sendable {
     case timeout(envelopeId: EnvelopeID)
     case dispatchFailed(envelopeId: EnvelopeID, underlying: String)
+
+    /// I-NEW-6 fix — alert UI 가 보여주던 "MaestroCore.DispatchServiceError error 1"
+    /// 이라는 cryptic Swift literal 대신 친절한 한국어 메시지.
+    public var errorDescription: String? {
+        switch self {
+        case .timeout:
+            return "응답을 기다리는 동안 시간이 초과됐어요."
+        case .dispatchFailed(_, let underlying):
+            return "메시지 전달이 실패했어요: \(underlying)"
+        }
+    }
 }
 
 /// DispatchService 의 lifecycle 콜백 — Phase 12 store 들에 wiring 하는 인터페이스.

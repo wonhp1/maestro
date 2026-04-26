@@ -18,22 +18,36 @@ struct DiscussionDetailView: View {
             Divider()
             messageList
             Divider()
+            errorBanner
             controlsBar
             if viewModel.state == .active || viewModel.state == .paused {
                 interruptComposer
             }
         }
-        .alert(
-            "오류",
-            isPresented: Binding(
-                get: { viewModel.lastError != nil },
-                set: { if !$0 { viewModel.dismissError() } }
-            ),
-            presenting: viewModel.lastError
-        ) { _ in
-            Button("확인", role: .cancel) { viewModel.dismissError() }
-        } message: { msg in
-            Text(msg)
+        // I-NEW-6 fix — 옛 modal `.alert("오류", ...)` 제거. cryptic UUID + Swift
+        // literal 이 사용자를 차단했음. 같은 정보가 곧바로 detail bar 의
+        // "사유: 오류가 누적되어 자동 중단" 으로 노출되고, lastError 자체는 inline
+        // notice 로 떨어진다 (controlsBar 위 errorBanner). 사용자가 직접 닫을 필요 X.
+    }
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let error = viewModel.lastError {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer()
+                Button("닫기") { viewModel.dismissError() }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.orange.opacity(0.1))
         }
     }
 

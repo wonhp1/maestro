@@ -58,6 +58,8 @@ struct SidebarView: View {
                 Divider()
                 addDiscussionButton
             }
+            Divider()
+            versionFooter
         }
         .frame(minWidth: 220)
         .alert(item: $activeAlert) { alert in
@@ -195,6 +197,19 @@ struct SidebarView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
+    }
+
+    /// 사이드바 최하단 버전 표시 — MaestroConfig.appVersion 단일 source.
+    private var versionFooter: some View {
+        HStack {
+            Spacer()
+            Text("v\(MaestroConfig.appVersion)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     private var addButton: some View {

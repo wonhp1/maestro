@@ -127,17 +127,10 @@ struct SidebarView: View {
                 detectionViewModel = AdapterDetectionViewModel(registry: registry)
             }
         }
-        .background(
-            // ⌘, 단축키 — 선택된 폴더의 설정 시트 열기. Hidden button 패턴.
-            Button("") {
-                if viewModel.selectedFolderID != nil {
-                    showingSettings = true
-                }
-            }
-            .keyboardShortcut(",", modifiers: [.command])
-            .opacity(0)
-            .frame(width: 0, height: 0)
-        )
+        // I-NEW-4 fix — 옛 ⌘, hidden Button 제거. SwiftUI Settings scene 의 ⌘,
+        // (앱 환경설정) 와 충돌해서 폴더 설정 시트가 먼저 열리는 버그. 폴더 설정은
+        // 우클릭 → 메뉴 또는 SidebarView 내부 다른 진입점으로 사용 (단축키는 ⌘, 가
+        // 아니라 다른 키 또는 미배정).
     }
 
     private var folderList: some View {

@@ -68,12 +68,10 @@ private struct GeneralPreferencesPane: View {
 
 private struct AgentsPreferencesPane: View {
     @Bindable var preferences: PreferencesStore
-    let apiKeyStorage: APIKeyStorage
+    let apiKeyStorage: APIKeyStorage  // 보존 — APIKeyStorage 자체는 미래 수요 대비
 
     private let knownAdapterIDs = ["claude", "aider"]
-
-    @State private var apiKeys: [String: String] = [:]
-    @State private var loadError: String?
+    @State private var actionMessage: String?
 
     var body: some View {
         Form {
@@ -95,41 +93,61 @@ private struct AgentsPreferencesPane: View {
                 }
             }
 
-            Section("API 키 (Keychain 저장)") {
-                ForEach(knownAdapterIDs, id: \.self) { id in
-                    HStack {
-                        Text(id).frame(width: 80, alignment: .leading)
-                        SecureField("API key", text: Binding(
-                            get: { apiKeys[id] ?? "" },
-                            set: { newValue in
-                                apiKeys[id] = newValue
-                                do {
-                                    try apiKeyStorage.setKey(for: id, value: newValue)
-                                    loadError = nil
-                                } catch {
-                                    loadError = "저장 실패: \(error.localizedDescription)"
-                                }
-                            }
-                        ))
+            // I-NEW-5 fix — 기존 dead "API 키 (Keychain 저장)" 섹션 제거.
+            // Maestro 는 BYOA orchestrator 라 인증을 어댑터 CLI 본인이 관리.
+            // 사용자가 헷갈리지 않게 명시적 안내 + Claude 는 1-click helper 제공.
+            Section("인증") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Claude")
+                        .font(.headline)
+                    Text("`claude auth login` 으로 한 번 로그인하면 OAuth 토큰이 디스크에 저장됩니다. Maestro 는 그 토큰을 그대로 활용해요.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("터미널에서 Claude 로그인 열기") {
+                        runInTerminal(command: "claude auth login")
                     }
                 }
-                if let loadError {
-                    Text(loadError).foregroundStyle(.red).font(.caption)
+                .padding(.vertical, 4)
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Aider")
+                        .font(.headline)
+                    Text("API 키를 환경변수로 설정하세요. `~/.zshrc` 에 한 줄 추가하면 영구 적용:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("export ANTHROPIC_API_KEY=sk-ant-...")
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(6)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    Button("터미널 열기") {
+                        runInTerminal(command: "echo '# 다음 줄을 ~/.zshrc 에 붙여넣고 source ~/.zshrc 하세요'; echo 'export ANTHROPIC_API_KEY=sk-ant-...'")
+                    }
+                }
+                .padding(.vertical, 4)
+                if let actionMessage {
+                    Text(actionMessage).foregroundStyle(.secondary).font(.caption)
                 }
             }
         }
-        .task {
-            for id in knownAdapterIDs {
-                apiKeys[id] = (try? apiKeyStorage.key(for: id)) ?? ""
-            }
-        }
-        .onDisappear {
-            // 메모리에서 API 키 평문 제거 (must-fix /team SEC).
-            // Keychain 에는 이미 저장됨. 뷰 재진입 시 .task 가 다시 로드.
-            for id in apiKeys.keys {
-                apiKeys[id] = ""
-            }
-            apiKeys.removeAll()
+    }
+
+    private func runInTerminal(command: String) {
+        let escaped = command.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
+        let task = Process()
+        task.launchPath = "/usr/bin/osascript"
+        task.arguments = ["-e", script]
+        do {
+            try task.run()
+            actionMessage = "터미널 창이 열렸어요."
+        } catch {
+            actionMessage = "터미널 실행 실패: \(error.localizedDescription)"
         }
     }
 }

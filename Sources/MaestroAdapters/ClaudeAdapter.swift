@@ -158,15 +158,16 @@ public actor ClaudeAdapter: AgentAdapter {
         ["sonnet", "opus", "haiku"]
     }
 
-    /// v0.5.5 — 우선순위 (정직, 추측 X):
-    /// 1. 사용자 지정 session.modelId
-    /// 2. 응답에서 capture 한 lastSeen (가장 정확 — Claude Code 의 실제 동작 모델)
-    /// 3. nil — UI 가 "감지 중…" 표시. 첫 메시지 보내면 자동 capture.
-    /// (옛 v0.5.3 의 knownDefaultModel hardcode fallback 은 사용자 환경의 실제
-    /// 모델이 아닐 수 있어 제거. 거짓 정보보다 정직한 "감지 중…" 이 낫다.)
+    /// v0.5.6 — 우선순위 (정확성 최우선):
+    /// 1. 응답에서 capture 한 lastSeen — **가장 정확한 full version**.
+    ///    (사용자가 picker 에서 alias `sonnet` 선택했어도, 응답이 알려준
+    ///    `claude-sonnet-4-5-20250929` 가 진짜 동작 중인 모델이므로 우선.)
+    /// 2. 사용자 지정 session.modelId — 응답 받기 전 alias 표시용 fallback.
+    /// 3. nil — UI 가 "감지 중…" 표시.
     public func resolvedModel(for session: Session) async -> String? {
+        if let lastSeen = lastSeenModelBySession[session.id] { return lastSeen }
         if let explicit = session.modelId, !explicit.isEmpty { return explicit }
-        return lastSeenModelBySession[session.id]
+        return nil
     }
 
     public func sendMessage(

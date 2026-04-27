@@ -54,20 +54,32 @@ public struct ChatView: View {
         return Self.prettyModel(raw)
     }
 
-    /// 사용자 친화 라벨: "claude-sonnet-4-5-20250929" → "Sonnet 4.5". 알 수 없는
-    /// 모델은 raw 그대로 (예: "gpt-4o", "deepseek-chat").
+    /// v0.5.6 — 일반 패턴 기반 압축. hardcode 한 버전 매치 (옛 4-5/4-1 만 인식)
+    /// 대신 `claude-(family)-(version)(-date)?` 추출.
+    /// 예시:
+    ///   - "sonnet" → "Sonnet"
+    ///   - "claude-sonnet-4-5" → "Sonnet 4.5"
+    ///   - "claude-sonnet-4-5-20250929" → "Sonnet 4.5"
+    ///   - "claude-sonnet-4-6" → "Sonnet 4.6" (미래 버전도 자동)
+    ///   - "claude-opus-4-1" → "Opus 4.1"
+    ///   - "gpt-4o" → "Gpt 4o" (다른 어댑터 alias 도 자연스럽게)
     static func prettyModel(_ id: String) -> String {
-        let lower = id.lowercased()
-        if lower.contains("sonnet") {
-            return lower.contains("4-5") ? "Sonnet 4.5" : "Sonnet"
+        var trimmed = id
+        if trimmed.hasPrefix("claude-") {
+            trimmed = String(trimmed.dropFirst("claude-".count))
         }
-        if lower.contains("opus") {
-            return lower.contains("4-1") ? "Opus 4.1" : "Opus"
+        var parts = trimmed.split(separator: "-").map(String.init)
+        guard let family = parts.first else { return id }
+        parts.removeFirst()
+        // YYYYMMDD date suffix 떼기 (8자리 숫자).
+        if let last = parts.last,
+           last.count == 8,
+           last.allSatisfy({ $0.isNumber }) {
+            parts.removeLast()
         }
-        if lower.contains("haiku") {
-            return lower.contains("4-5") ? "Haiku 4.5" : "Haiku"
-        }
-        return id
+        let familyCap = family.prefix(1).uppercased() + family.dropFirst()
+        if parts.isEmpty { return familyCap }
+        return "\(familyCap) \(parts.joined(separator: "."))"
     }
 
     @ViewBuilder

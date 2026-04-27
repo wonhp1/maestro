@@ -37,31 +37,17 @@ struct SlashSuggestionsModifier: ViewModifier {
     /// SwiftUI .onKeyPress 까지 안 옴. NSEvent local monitor 로 popover 가 떴을 때만
     /// 가로챔. dismiss 시 해제.
     @State private var keyMonitor: KeyMonitorBox = KeyMonitorBox()
+    /// v0.7.0 Phase 3 polish — recompute 의 in-flight Task. typing 마다 cancel-restart.
+    @State private var currentTask: Task<Void, Never>?
 
     /// pure logic — view rebuild 마다 새로 만들어도 비용 없음 (struct, no state).
     private let engine = SlashSuggestionEngine()
 
     func body(content: Content) -> some View {
         content
-            .task(id: draft) {
-                // applySelection latch — 직후 같은 draft 면 skip.
-                if draft == lastAppliedDraft { return }
-                // typing burst — debounce 80ms.
-                try? await Task.sleep(nanoseconds: 80_000_000)
-                guard !Task.isCancelled else { return }
-                // captured draft (must-fix /team HIGH-1) — snapshot await 중 draft 변하면
-                // 다음 task 가 cancel 시켜야 정확. 여기서 한 번 더 snapshot.
-                let captured = draft
-                // v0.7.0 Phase 3 — refresh() 로 매번 fresh (snapshot() 의 actor cache
-                // 우회). ClaudeAdapter 가 dispatch 응답에서 capture 한 builtin 이
-                // 첫 메시지 직후부터 popover 에 노출되게 함.
-                snapshot = await registry.refresh()
-                guard !Task.isCancelled else { return }
-                // captured 와 현재 draft 가 다르면 더 최신 task 가 진행 중 — 이 결과 버림.
-                guard captured == draft else { return }
-                let new = engine.evaluate(draft: captured, registrySnapshot: snapshot)
-                suggestion = new
-                selectedIndex = 0  // 새 suggestion 마다 첫 항목으로 reset
+            .onAppear { recompute(for: draft) }
+            .onChange(of: draft) { _, newValue in
+                recompute(for: newValue)
             }
             .popover(
                 isPresented: Binding(
@@ -83,6 +69,10 @@ struct SlashSuggestionsModifier: ViewModifier {
                             applySelection(selected: selected)
                         }
                     )
+                    // SwiftUI popover content 는 isPresented==true 동안 stable identity
+                    // 라 candidates 변경 시 redraw 안 됨. query 를 id 로 → SwiftUI 가
+                    // 매번 새 view 로 인식 → 강제 redraw.
+                    .id(suggestion.query)
                 }
             }
             .onChange(of: suggestion != nil) { _, isShown in
@@ -154,6 +144,29 @@ struct SlashSuggestionsModifier: ViewModifier {
     final class KeyMonitorBox {
         var token: Any?
         init() { self.token = nil }
+    }
+
+    /// 매 keystroke 마다 호출 — 새 Task 를 spawn 하고 in-flight task 를 cancel.
+    /// `.task(id:)` + Task.sleep 의 cancel-restart race 를 피하기 위해 직접 manage.
+    private func recompute(for newDraft: String) {
+        // applySelection 직후 같은 draft → skip (re-trigger 차단).
+        if newDraft == lastAppliedDraft { return }
+        // 이전 in-flight task cancel.
+        currentTask?.cancel()
+        currentTask = Task { @MainActor in
+            // typing burst 흡수 — 짧은 debounce. cancelled 면 즉시 종료.
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            if Task.isCancelled { return }
+            let captured = newDraft
+            // refresh — capture 후 fresh list. file source scan 비용은 registry 가 흡수.
+            let snap = await registry.refresh()
+            if Task.isCancelled { return }
+            // 가장 최신 task 만 적용 — captured 와 현재 draft 불일치면 stale.
+            if captured != draft { return }
+            snapshot = snap
+            suggestion = engine.evaluate(draft: captured, registrySnapshot: snap)
+            selectedIndex = 0
+        }
     }
 
     private func applySelection(selected: DiscoveredSlashCommand) {

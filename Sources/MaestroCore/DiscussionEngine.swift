@@ -74,8 +74,14 @@ public actor DiscussionEngine {
     }
 
     /// 토론 시작. `pending → active` 전이 후 첫 턴 spawn.
+    /// v0.5.0: 참가자별 ephemeral subSessionID 자동 발급 (없는 참가자만).
+    /// 영속화된 토론을 재로드한 경우 기존 ID 보존 → 같은 ephemeral 세션 재개.
     public func start() async throws {
         try discussion.transition(to: .active)
+        for participant in discussion.participants
+        where discussion.subSessions[participant] == nil {
+            discussion.assignSubSession(.new(), for: participant)
+        }
         broadcast(.stateChanged(.active))
         await scheduleAdvance()
     }
@@ -288,4 +294,94 @@ public struct DispatchServiceTurnDispatcher: DiscussionDispatching {
 
 public enum DiscussionEngineError: Error, Equatable, Sendable {
     case noReply(speaker: AgentID)
+}
+
+// MARK: - v0.5.0 — Isolated discussion dispatch
+
+/// 토론 격리용 ephemeral 세션 팩토리.
+///
+/// 일반 dispatch (DispatchService) 는 자식의 **메인 세션** 을 사용 → 토론 발언이
+/// 자식의 일반 채팅 컨텍스트를 오염시킨다. 이 팩토리는 토론 단위 ephemeral
+/// SessionID 로 별도 어댑터 세션을 만들어, 메인 세션을 건드리지 않음.
+///
+/// production 구현은 Maestro target 의 FolderRegistry + AdapterRegistry 를
+/// 결합 (`MaestroIsolatedSessionFactory`). 테스트는 fake 사용.
+public protocol IsolatedSessionFactory: Sendable {
+    func makeIsolatedSession(
+        for agent: AgentID,
+        sessionId: SessionID
+    ) async throws -> ResolvedAgent
+}
+
+/// `IsolatedSessionFactory` 로부터 ephemeral 세션을 받아 한 턴을 실행하는
+/// dispatcher — `DiscussionEngine` 의 새 production 경로.
+///
+/// 동작:
+/// 1. `discussion.subSessions[speaker]` 에서 ephemeral SessionID 조회 (없으면 throws).
+/// 2. factory 로 `(adapter, session)` 회수 — 어댑터가 `--session-id <id>` 또는
+///    `--resume <id>` 로 ephemeral 세션 spawn/재개.
+/// 3. 발언 prompt 를 envelope 로 만들어 `adapter.sendMessage` 호출.
+/// 4. 응답 envelope 의 메타 (threadId/inReplyTo/from/to) 를 정규화 후 반환.
+public struct IsolatedTurnDispatcher: DiscussionDispatching {
+    private let factory: IsolatedSessionFactory
+    private let from: AgentID
+
+    public init(factory: IsolatedSessionFactory, from: AgentID) {
+        self.factory = factory
+        self.from = from
+    }
+
+    public func dispatchTurn(
+        discussion: Discussion,
+        speaker: AgentID,
+        prompt: String
+    ) async throws -> MessageEnvelope {
+        guard let subSessionId = discussion.subSessions[speaker] else {
+            throw IsolatedDispatchError.missingSubSession(speaker: speaker)
+        }
+        let resolved = try await factory.makeIsolatedSession(
+            for: speaker, sessionId: subSessionId
+        )
+        let envelope = MessageEnvelope(
+            id: EnvelopeID.new(),
+            threadId: discussion.id,
+            inReplyTo: nil,
+            from: from,
+            to: speaker,
+            type: .task,
+            body: prompt,
+            createdAt: Date(),
+            expectReply: true
+        )
+        let reply = try await resolved.adapter.sendMessage(envelope, in: resolved.session)
+        return Self.normalize(reply: reply, against: envelope)
+    }
+
+    /// 어댑터가 채우지 않을 수 있는 메타를 강제 set — `EnvelopeRouter.normalize`
+    /// 와 같은 규칙. `Discussion.recordTurn(from:)` 의 thread/from 검증 통과 보장.
+    private static func normalize(
+        reply: MessageEnvelope, against original: MessageEnvelope
+    ) -> MessageEnvelope {
+        if reply.threadId == original.threadId,
+           reply.inReplyTo == original.id,
+           reply.from == original.to,
+           reply.to == original.from {
+            return reply
+        }
+        return MessageEnvelope(
+            id: reply.id,
+            threadId: original.threadId,
+            inReplyTo: original.id,
+            from: original.to,
+            to: original.from,
+            type: reply.type,
+            body: reply.body,
+            createdAt: reply.createdAt,
+            expectReply: reply.expectReply
+        )
+    }
+}
+
+public enum IsolatedDispatchError: Error, Equatable, Sendable {
+    case missingSubSession(speaker: AgentID)
 }

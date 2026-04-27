@@ -217,6 +217,78 @@ final class DiscussionEngineTests: XCTestCase {
         XCTAssertLessThanOrEqual(count, 1, "pause 중 들어온 reply 는 record 되지 않아야")
     }
 
+    // MARK: - v0.5.0 — subSession isolation
+
+    /// `start()` 가 참가자별 ephemeral subSessionID 를 자동 발급해야 함.
+    func testStartPopulatesSubSessionsForAllParticipants() async throws {
+        let engine = makeEngine(
+            discussion: makeDiscussion(maxTurns: 1),
+            dispatcher: ScriptedDispatcher()
+        )
+        try await engine.start()
+        let d = await engine.discussion
+        XCTAssertEqual(d.subSessions.count, 3)
+        XCTAssertNotNil(d.subSessions[alice])
+        XCTAssertNotNil(d.subSessions[bob])
+        XCTAssertNotNil(d.subSessions[carol])
+        let raws = Set(d.subSessions.values.map { $0.rawValue })
+        XCTAssertEqual(raws.count, 3, "모든 subSessionID 는 unique")
+    }
+
+    /// 이미 할당된 subSessionID 는 `start()` 가 덮어쓰지 않아야 함.
+    /// (영속화된 토론 재로드 시나리오 — 같은 ephemeral 세션 재개 보장.)
+    func testStartPreservesPreassignedSubSessions() async throws {
+        var d = makeDiscussion(maxTurns: 1)
+        let preset = SessionID(rawValue: "11111111-1111-1111-1111-111111111111")
+        d.assignSubSession(preset, for: alice)
+        let engine = makeEngine(discussion: d, dispatcher: ScriptedDispatcher())
+        try await engine.start()
+        let after = await engine.discussion
+        XCTAssertEqual(after.subSessions[alice], preset, "기존 ID 보존")
+        XCTAssertNotNil(after.subSessions[bob])
+        XCTAssertNotNil(after.subSessions[carol])
+    }
+
+    /// `IsolatedTurnDispatcher` 가 speaker 의 subSessionID 를 factory 에 넘겨
+    /// ephemeral 세션을 만든 뒤 그 세션으로 sendMessage 호출.
+    func testIsolatedTurnDispatcherPassesSubSessionIDToFactory() async throws {
+        let factory = RecordingIsolatedSessionFactory()
+        let dispatcher = IsolatedTurnDispatcher(
+            factory: factory,
+            from: AgentID(rawValue: "control")
+        )
+        var d = makeDiscussion(maxTurns: 1)
+        let aliceSession = SessionID(rawValue: "alice-iso")
+        d.assignSubSession(aliceSession, for: alice)
+        _ = try await dispatcher.dispatchTurn(
+            discussion: d, speaker: alice, prompt: "go"
+        )
+        let calls = await factory.calls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.agent, alice)
+        XCTAssertEqual(calls.first?.sessionId, aliceSession)
+    }
+
+    /// subSession 이 없는 speaker 에 대한 dispatch 는 구체적 에러로 throws.
+    func testIsolatedTurnDispatcherThrowsWhenSubSessionMissing() async {
+        let factory = RecordingIsolatedSessionFactory()
+        let dispatcher = IsolatedTurnDispatcher(
+            factory: factory,
+            from: AgentID(rawValue: "control")
+        )
+        let d = makeDiscussion(maxTurns: 1)  // 비어있음
+        do {
+            _ = try await dispatcher.dispatchTurn(
+                discussion: d, speaker: alice, prompt: "go"
+            )
+            XCTFail("missing subSession 일 때 throws 해야")
+        } catch let error as IsolatedDispatchError {
+            XCTAssertEqual(error, .missingSubSession(speaker: alice))
+        } catch {
+            XCTFail("예상과 다른 에러: \(error)")
+        }
+    }
+
     func testDispatcherErrorAbortsDiscussion() async throws {
         let dispatcher = ThrowingDispatcher()
         let engine = makeEngine(
@@ -303,5 +375,74 @@ struct ThrowingDispatcher: DiscussionDispatching {
         prompt: String
     ) async throws -> MessageEnvelope {
         throw Boom()
+    }
+}
+
+/// v0.5.0 — IsolatedSessionFactory 호출 인자를 기록하는 테스트 fake.
+/// 반환되는 ResolvedAgent 는 echo adapter — sendMessage 가 즉시 응답 envelope.
+actor RecordingIsolatedSessionFactory: IsolatedSessionFactory {
+    struct Call: Sendable, Equatable {
+        let agent: AgentID
+        let sessionId: SessionID
+    }
+    private(set) var calls: [Call] = []
+
+    func makeIsolatedSession(
+        for agent: AgentID,
+        sessionId: SessionID
+    ) async throws -> ResolvedAgent {
+        calls.append(Call(agent: agent, sessionId: sessionId))
+        return ResolvedAgent(
+            adapter: EchoAdapter(),
+            session: Session(
+                id: sessionId,
+                agentId: agent,
+                adapterId: AdapterID(rawValue: "echo"),
+                folderPath: URL(fileURLWithPath: "/tmp"),
+                createdAt: Date(),
+                lastActivityAt: Date(),
+                status: .active
+            )
+        )
+    }
+}
+
+/// 즉시 echo 응답을 돌려주는 미니 어댑터 — IsolatedTurnDispatcher 단위 테스트용.
+struct EchoAdapter: AgentAdapter {
+    static let id = "echo"
+    static let displayName = "Echo"
+    static let iconName = "terminal"
+
+    func detect() async -> AdapterDetection { .notInstalled() }
+
+    func createSession(folderPath: URL) async throws -> Session {
+        Session(
+            id: SessionID.new(),
+            agentId: AgentID(rawValue: "echo-agent"),
+            adapterId: AdapterID(rawValue: "echo"),
+            folderPath: folderPath,
+            createdAt: Date(),
+            lastActivityAt: Date(),
+            status: .active
+        )
+    }
+
+    func destroySession(_ id: SessionID) async throws {}
+
+    func sendMessage(
+        _ envelope: MessageEnvelope,
+        in session: Session
+    ) async throws -> MessageEnvelope {
+        MessageEnvelope(
+            id: EnvelopeID.new(),
+            threadId: envelope.threadId,
+            inReplyTo: envelope.id,
+            from: envelope.to,
+            to: envelope.from,
+            type: .report,
+            body: "echo: \(envelope.body)",
+            createdAt: Date(),
+            expectReply: false
+        )
     }
 }

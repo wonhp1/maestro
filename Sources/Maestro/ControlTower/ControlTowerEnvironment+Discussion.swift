@@ -28,8 +28,10 @@ extension ControlTowerEnvironment {
 
     /// `DiscussionStartRequest` 를 실제 토론 객체 + engine + viewModel 으로 구체화.
     /// 시작 후 store 에 등록, ThreadID 반환.
+    /// v0.5.0: `IsolatedTurnDispatcher` 로 자식 메인 세션 격리 (토론 발언이 자식
+    /// 일반 채팅 컨텍스트 오염 차단).
     public func startDiscussion(request: DiscussionStartRequest) async throws -> ThreadID {
-        guard let dispatchService else {
+        guard let folderViewModel else {
             throw DiscussionStartError.invalidInput
         }
         let threadId = ThreadID.new()
@@ -57,8 +59,12 @@ extension ControlTowerEnvironment {
             // 도달 X. 도달 시는 명시적 에러 — silent fallback 금지 (M1 review).
             throw DiscussionStartError.invalidInput
         }
-        let dispatcher = DispatchServiceTurnDispatcher(
-            service: dispatchService,
+        let factory = MaestroIsolatedSessionFactory(
+            folderViewModel: folderViewModel,
+            adapterRegistry: adapterRegistry
+        )
+        let dispatcher = IsolatedTurnDispatcher(
+            factory: factory,
             from: AgentID(rawValue: "control")
         )
         let engine = DiscussionEngine(

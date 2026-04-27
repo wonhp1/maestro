@@ -195,4 +195,36 @@ final class FolderRegistrationTests: XCTestCase {
         XCTAssertEqual(decoded.path.path, original.path.path)
         XCTAssertEqual(decoded.adapterId, original.adapterId)
     }
+
+    // MARK: - v0.5.1 — modelId
+
+    func testCodableRoundTripPreservesModelId() throws {
+        let original = FolderRegistration(
+            id: FolderID(rawValue: "abc-456"),
+            displayName: "test",
+            path: URL(filePath: "/tmp/x"),
+            adapterId: AdapterID(rawValue: "claude"),
+            createdAt: Date(),
+            modelId: "claude-opus-4-1"
+        )
+        let data = try JSONEncoder.maestro.encode(original)
+        let decoded = try JSONDecoder.maestro.decode(FolderRegistration.self, from: data)
+        XCTAssertEqual(decoded.modelId, "claude-opus-4-1")
+    }
+
+    /// 옛 folders.json (modelId 키 없음) 디코딩 시 nil 폴백.
+    func testDecodeWithoutModelIdBackwardCompat() throws {
+        let legacy = #"""
+        {
+          "id": "abc-789",
+          "displayName": "legacy",
+          "path": "file:///tmp/x",
+          "adapterId": "claude",
+          "createdAt": "2024-04-27T01:00:00Z"
+        }
+        """#
+        let data = Data(legacy.utf8)
+        let decoded = try JSONDecoder.maestro.decode(FolderRegistration.self, from: data)
+        XCTAssertNil(decoded.modelId)
+    }
 }

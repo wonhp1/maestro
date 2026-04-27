@@ -25,6 +25,11 @@ public struct FolderRegistration: Codable, Hashable, Sendable, Identifiable {
     /// 동일 ID 로 어댑터 createSession → adapter 가 `claude --resume <id>` 로 재개.
     /// nil 이면 fresh ID. 마이그레이션: 기존 folders.json 에 키 없으면 nil 로 디코딩.
     public var sessionId: SessionID?
+    /// v0.5.1 — 폴더 단위 LLM 모델 선택. nil 이면 어댑터의 기본 (Claude CLI 의 default).
+    /// 어댑터별 의미: claude → `--model <id>` flag (예: `claude-sonnet-4-5`,
+    /// `claude-opus-4-1`, `claude-haiku-4-5`). 마이그레이션: 옛 folders.json 의
+    /// 키 부재 시 nil → 사용자가 설정 sheet 에서 변경 가능.
+    public var modelId: String?
 
     public init(
         id: FolderID = .new(),
@@ -33,7 +38,8 @@ public struct FolderRegistration: Codable, Hashable, Sendable, Identifiable {
         adapterId: AdapterID,
         createdAt: Date = Date(),
         lastUsedAt: Date? = nil,
-        sessionId: SessionID? = nil
+        sessionId: SessionID? = nil,
+        modelId: String? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -42,6 +48,7 @@ public struct FolderRegistration: Codable, Hashable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
         self.sessionId = sessionId
+        self.modelId = modelId
     }
 
     /// 표시 이름 검증 — 등록/업데이트 진입점.

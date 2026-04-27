@@ -243,6 +243,36 @@ final class ClaudeAdapterTests: XCTestCase {
         XCTAssertEqual(cmds.first(where: { $0.name == "deploy" })?.category, "project")
     }
 
+    // MARK: - v0.5.1 — modelId
+
+    func testModelIdAddedAsModelFlag() async throws {
+        let exec = RecordingExecutor(stdout: jsonResultRaw(text: "ok"))
+        let adapter = try makeAdapter(executor: exec, executableExists: true)
+        let session = try await adapter.createSession(
+            folderPath: tempHome,
+            preferredSessionId: nil,
+            modelId: "claude-opus-4-1"
+        )
+        _ = try await adapter.sendMessage(makeTaskEnvelope(body: "hi"), in: session)
+        let calls = await exec.calls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertTrue(calls[0].arguments.contains("--model"))
+        XCTAssertTrue(calls[0].arguments.contains("claude-opus-4-1"))
+    }
+
+    func testNilModelIdOmitsFlag() async throws {
+        let exec = RecordingExecutor(stdout: jsonResultRaw(text: "ok"))
+        let adapter = try makeAdapter(executor: exec, executableExists: true)
+        let session = try await adapter.createSession(
+            folderPath: tempHome,
+            preferredSessionId: nil,
+            modelId: nil
+        )
+        _ = try await adapter.sendMessage(makeTaskEnvelope(body: "hi"), in: session)
+        let calls = await exec.calls
+        XCTAssertFalse(calls[0].arguments.contains("--model"))
+    }
+
     // MARK: - Static metadata
 
     func testStaticMetadata() {

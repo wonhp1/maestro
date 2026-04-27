@@ -117,12 +117,14 @@ public actor FolderRegistry {
         broadcast(.removed(removed))
     }
 
-    /// 디스플레이 이름 / 어댑터 변경. 경로는 변경 불가 (재등록 권장).
+    /// 디스플레이 이름 / 어댑터 / 모델 변경. 경로는 변경 불가 (재등록 권장).
+    /// modelId 에 빈 문자열 또는 nil 을 넘기면 "기본 모델" 로 reset.
     @discardableResult
     public func update(
         id: FolderID,
         displayName: String? = nil,
-        adapterId: AdapterID? = nil
+        adapterId: AdapterID? = nil,
+        modelId: String?? = nil
     ) async throws -> FolderRegistration {
         guard let index = folders.firstIndex(where: { $0.id == id }) else {
             throw FolderRegistryError.notFound(id: id)
@@ -134,6 +136,11 @@ public actor FolderRegistry {
         }
         if let newAdapter = adapterId {
             folder.adapterId = newAdapter
+        }
+        if let newModel = modelId {
+            // Optional<Optional<String>> — 외부 nil = "변경 안 함", inner nil = "기본 모델"
+            let trimmed = newModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+            folder.modelId = (trimmed?.isEmpty ?? true) ? nil : trimmed
         }
         folders[index] = folder
         try await persist()

@@ -18,6 +18,9 @@ public struct Session: Codable, Hashable, Sendable, Identifiable {
     public var status: SessionStatus
     /// `.terminated` 일 때 종료 원인. `.active`/`.idle` 일 때는 `nil`.
     public var exitCause: SessionExitCause?
+    /// v0.5.1 — 폴더 단위로 선택된 LLM 모델 (예: `claude-sonnet-4-5`). nil 이면
+    /// 어댑터 기본. ClaudeAdapter 가 buildArguments 에서 `--model <id>` 로 변환.
+    public var modelId: String?
 
     public init(
         id: SessionID,
@@ -27,7 +30,8 @@ public struct Session: Codable, Hashable, Sendable, Identifiable {
         createdAt: Date,
         lastActivityAt: Date,
         status: SessionStatus,
-        exitCause: SessionExitCause? = nil
+        exitCause: SessionExitCause? = nil,
+        modelId: String? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -37,6 +41,7 @@ public struct Session: Codable, Hashable, Sendable, Identifiable {
         self.lastActivityAt = lastActivityAt
         self.status = status
         self.exitCause = exitCause
+        self.modelId = modelId
     }
 }
 

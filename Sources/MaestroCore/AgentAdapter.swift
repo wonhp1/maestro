@@ -39,8 +39,10 @@ public protocol AgentAdapter: Sendable {
     /// folder 단위로 영속한 ID 를 넘기면 어댑터가 그 ID 로 세션을 만들고, 첫 send 가
     /// 자동으로 `--resume` 경로를 타게 함. nil 이면 기존 동작 (새 ID).
     /// 기본 구현은 preferredSessionId 무시 → 기존 createSession 호출 (mock/aider 호환).
+    /// v0.5.1 — modelId 옵션 추가 (예: `claude-sonnet-4-5`). 어댑터별 의미 다름:
+    /// claude → `--model <id>` flag. 기본 구현은 modelId 무시.
     func createSession(
-        folderPath: URL, preferredSessionId: SessionID?
+        folderPath: URL, preferredSessionId: SessionID?, modelId: String?
     ) async throws -> Session
 
     /// 세션 종료. 자식 프로세스/리소스 정리.
@@ -100,10 +102,10 @@ public extension AgentAdapter {
     /// 기본 구현: 슬래시 명령 없음. 어댑터가 동적 카탈로그를 가지면 오버라이드.
     func listSlashCommands(in session: Session) async -> [SlashCommand] { [] }
 
-    /// 기본 구현: preferredSessionId 무시 + 기존 createSession 호출. ClaudeAdapter
-    /// 가 override 해서 ID 보존.
+    /// 기본 구현: preferredSessionId / modelId 무시 + 기존 createSession 호출.
+    /// ClaudeAdapter 가 override 해서 둘 다 보존.
     func createSession(
-        folderPath: URL, preferredSessionId: SessionID?
+        folderPath: URL, preferredSessionId: SessionID?, modelId: String?
     ) async throws -> Session {
         try await createSession(folderPath: folderPath)
     }

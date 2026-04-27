@@ -11,6 +11,8 @@ public struct ChatView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            modelHeader
+            Divider()
             messageList
             Divider()
             ChatComposer(viewModel: viewModel) {
@@ -19,6 +21,42 @@ public struct ChatView: View {
             errorBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// v0.5.1 — 어댑터 + 모델 표시 헤더.
+    private var modelHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: viewModel.adapter.iconName.isEmpty
+                  ? "terminal" : viewModel.adapter.iconName)
+                .foregroundStyle(.tint)
+                .imageScale(.small)
+            Text(viewModel.adapter.displayName)
+                .font(.caption.weight(.semibold))
+            Text("·").foregroundStyle(.tertiary).font(.caption)
+            Text(modelLabel)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .help("폴더 설정 (⌘,) 에서 변경")
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial)
+    }
+
+    private var modelLabel: String {
+        let raw = viewModel.session.modelId ?? ""
+        if raw.isEmpty { return "기본 모델" }
+        // 사용자 친화 라벨: "claude-sonnet-4-5" → "Sonnet 4.5"
+        return Self.prettyClaudeModel(raw)
+    }
+
+    static func prettyClaudeModel(_ id: String) -> String {
+        let lower = id.lowercased()
+        if lower.contains("sonnet") { return id.contains("4-5") ? "Sonnet 4.5" : "Sonnet" }
+        if lower.contains("opus") { return id.contains("4-1") ? "Opus 4.1" : "Opus" }
+        if lower.contains("haiku") { return id.contains("4-5") ? "Haiku 4.5" : "Haiku" }
+        return id
     }
 
     @ViewBuilder

@@ -52,7 +52,8 @@ final class MaestroIsolatedSessionFactory: IsolatedSessionFactory {
         }
         let session = try await adapter.createSession(
             folderPath: folder.path,
-            preferredSessionId: sessionId
+            preferredSessionId: sessionId,
+            modelId: folder.modelId
         )
         return ResolvedAgent(adapter: adapter, session: session)
     }

@@ -14,6 +14,8 @@ struct FolderSettingsSheet: View {
 
     @State private var displayName: String
     @State private var adapterId: String
+    /// v0.5.1 — 모델 선택. "" = 기본 (어댑터 default), 그 외 = 명시적 modelId.
+    @State private var modelId: String
 
     init(
         folder: FolderRegistration,
@@ -27,6 +29,7 @@ struct FolderSettingsSheet: View {
         self.dismiss = dismiss
         _displayName = State(initialValue: folder.displayName)
         _adapterId = State(initialValue: folder.adapterId.rawValue)
+        _modelId = State(initialValue: folder.modelId ?? "")
     }
 
     var body: some View {
@@ -50,6 +53,14 @@ struct FolderSettingsSheet: View {
                 Picker("기본 어댑터", selection: $adapterId) {
                     ForEach(availableAdapters, id: \.self) { id in
                         Text(adapterDisplayName(for: id)).tag(id)
+                    }
+                }
+
+                if adapterId == "claude" {
+                    Picker("모델", selection: $modelId) {
+                        ForEach(claudeModelOptions, id: \.id) { opt in
+                            Text(opt.label).tag(opt.id)
+                        }
                     }
                 }
             }
@@ -141,6 +152,11 @@ struct FolderSettingsSheet: View {
     private var hasChanges: Bool {
         displayName.trimmingCharacters(in: .whitespacesAndNewlines) != folder.displayName
             || adapterId != folder.adapterId.rawValue
+            || normalizedModelId != (folder.modelId ?? "")
+    }
+
+    private var normalizedModelId: String {
+        modelId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func applyChanges() async {
@@ -157,6 +173,20 @@ struct FolderSettingsSheet: View {
                 return
             }
         }
+        if normalizedModelId != (folder.modelId ?? "") {
+            await viewModel.changeModel(id: folder.id, to: normalizedModelId)
+        }
         dismiss()
+    }
+
+    /// v0.5.1 — Claude Code CLI 가 인식하는 모델 ID 옵션. 빈 string = 기본
+    /// (CLI default). 새 모델 추가 시 이 리스트만 갱신.
+    private var claudeModelOptions: [(id: String, label: String)] {
+        [
+            ("", "기본 (Claude CLI 설정)"),
+            ("claude-sonnet-4-5", "Sonnet 4.5"),
+            ("claude-opus-4-1", "Opus 4.1"),
+            ("claude-haiku-4-5", "Haiku 4.5"),
+        ]
     }
 }

@@ -85,14 +85,18 @@ public actor ClaudeAdapter: AgentAdapter {
     }
 
     public func createSession(folderPath: URL) async throws -> Session {
-        try await createSession(folderPath: folderPath, preferredSessionId: nil)
+        try await createSession(
+            folderPath: folderPath, preferredSessionId: nil, modelId: nil
+        )
     }
 
     /// I-NEW-2 fix — preferredSessionId 가 주어지면 그 ID 로 세션을 만들고, 디스크에
     /// 같은 이름의 JSONL 이 이미 있으면 다음 send 부터 자동으로 `--resume <id>` 사용.
     /// (initializedSessions 에 미리 등록 → sendMessage 가 isFirst=false 분기.)
+    /// v0.5.1 — modelId 가 주어지면 Session.modelId 에 저장 → buildArguments 가
+    /// `--model <id>` flag 추가.
     public func createSession(
-        folderPath: URL, preferredSessionId: SessionID?
+        folderPath: URL, preferredSessionId: SessionID?, modelId: String?
     ) async throws -> Session {
         let sessionId = preferredSessionId ?? SessionID.new()
         let resolvedFolder = folderPath.resolvingSymlinksInPath()
@@ -104,7 +108,8 @@ public actor ClaudeAdapter: AgentAdapter {
             folderPath: resolvedFolder,
             createdAt: now,
             lastActivityAt: now,
-            status: .active
+            status: .active,
+            modelId: modelId
         )
         sessions[sessionId] = session
         // preferredSessionId 가 있고 해당 JSONL 이 이미 존재하면 첫 send 부터 --resume.
@@ -275,6 +280,12 @@ public actor ClaudeAdapter: AgentAdapter {
         ]
         if outputFormat == "stream-json" {
             args.append("--verbose")
+        }
+        // v0.5.1 — 폴더 단위 모델 선택 (예: claude-sonnet-4-5, claude-opus-4-1).
+        // nil 이면 flag 안 보냄 → Claude CLI 의 default.
+        if let modelId = session.modelId, !modelId.isEmpty {
+            args.append("--model")
+            args.append(modelId)
         }
         // Phase 27 — control agent 처럼 동적 system prompt 주입.
         // 매 호출마다 fresh — 폴더 추가/제거 즉시 반영.

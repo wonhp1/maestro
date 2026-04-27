@@ -146,6 +146,21 @@ public final class FolderViewModel {
         }
     }
 
+    /// v0.5.1 — 폴더의 모델 ID 변경. 빈 문자열은 "기본 (어댑터 default)" 로 reset.
+    /// 적용 시점: 다음 createSession (사용자가 폴더 재선택 또는 앱 재시작) 부터 반영.
+    /// 같은 ChatViewModel 이 캐시된 동안엔 옛 모델 유지 — UI 가 안내 (TODO).
+    public func changeModel(id: FolderID, to modelId: String) async {
+        do {
+            let normalized: String? = modelId.isEmpty ? nil : modelId
+            // 옵션 of옵션: 외부 .some(nil) = "기본으로 reset", .some(.some(x)) = 새 값.
+            let payload: String?? = .some(normalized)
+            try await registry.update(id: id, modelId: payload)
+            await refreshFolders()
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
     /// 사용자가 사이드바에서 폴더 클릭 — lastUsedAt 기록 + 선택.
     public func select(id: FolderID) async {
         selectedFolderID = id

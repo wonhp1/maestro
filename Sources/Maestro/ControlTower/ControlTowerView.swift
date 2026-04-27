@@ -454,7 +454,8 @@ public final class ControlTowerEnvironment {
                let ctrl = controlClaudeAdapter {
                 let session = try await ctrl.createSession(
                     folderPath: folder.path,
-                    preferredSessionId: folder.sessionId
+                    preferredSessionId: folder.sessionId,
+                    modelId: folder.modelId
                 )
                 return try ChatViewModel(adapter: ctrl, session: session)
             }
@@ -464,7 +465,8 @@ public final class ControlTowerEnvironment {
             )
             let session = try await adapter.createSession(
                 folderPath: folder.path,
-                preferredSessionId: folder.sessionId
+                preferredSessionId: folder.sessionId,
+                modelId: folder.modelId
             )
             return try ChatViewModel(adapter: adapter, session: session)
         }

@@ -133,6 +133,29 @@ public final class DiscussionViewModel {
         lastError = nil
     }
 
+    /// v0.6.0 — 재개 진행 중 표시 — UI 가 버튼 disable 에 사용 (review L4).
+    public private(set) var isResuming: Bool = false
+
+    /// v0.6.0 — 종료된 (completed/paused) 토론 재개. 디스크에서 복원된
+    /// history-only 토론을 살리거나, 완료된 토론에 추가 턴 dispatch.
+    public func resume(
+        addingTurns extra: Int,
+        dispatcherFactory: @MainActor () -> DiscussionDispatching
+    ) async {
+        guard !isResuming else { return }
+        isResuming = true
+        defer { isResuming = false }
+        do {
+            try await engine.resume(
+                addingTurns: extra,
+                with: dispatcherFactory()
+            )
+            // engine 의 .stateChanged(.active) 이벤트가 자동 sync.
+        } catch {
+            lastError = "토론 재개 실패: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - v0.5.0 — Conclusion
 
     /// 사회자 (요약기) 호출. 진행 중 표시 위해 `isSummarizing` 토글.

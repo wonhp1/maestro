@@ -179,7 +179,19 @@ struct ControlTowerView: View {
                 memoStore: environment.agentMemoStore,
                 agentDisplayResolver: environment.folderViewModel.map { fvm in
                     fvm.displayName(for:)
-                } ?? { $0.rawValue }
+                } ?? { $0.rawValue },
+                // v0.6.0 — folderViewModel 이 준비된 경우에만 factory 주입.
+                // nil 이면 DiscussionDetailView 의 "재개" 버튼이 비활성화.
+                resumeDispatcherFactory: environment.folderViewModel.map { fvm in
+                    { @MainActor in
+                        IsolatedTurnDispatcher(
+                            factory: environment.makeIsolatedSessionFactory(
+                                folderViewModel: fvm
+                            ),
+                            from: AgentID(rawValue: "control")
+                        )
+                    }
+                }
             )
         } else {
             folderDetailContent

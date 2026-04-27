@@ -15,8 +15,15 @@ struct DiscussionDetailView: View {
     /// v0.5.0 — agentDisplayResolver: AgentID → 폴더 displayName. 칩 라벨에 사용.
     /// 기본값은 raw — 호출자가 FolderViewModel.displayName(for:) 주입 권장.
     var agentDisplayResolver: (AgentID) -> String = { $0.rawValue }
+    /// v0.6.0 — 토론 resume 시 사용할 production dispatcher 생성 factory.
+    /// nil 이면 "재개" 버튼 비활성. 보통 ControlTowerView 가
+    /// `IsolatedTurnDispatcher(factory: ..., from: control)` 반환.
+    var resumeDispatcherFactory: (@MainActor () -> DiscussionDispatching)?
 
     @State private var interruptDraft: String = ""
+    /// v0.6.0 — "재개 (턴 추가)" 다이얼로그.
+    @State private var showResumeSheet: Bool = false
+    @State private var resumeAdditionalTurns: Int = 5
     /// v0.5.0 — TextEditor binding state. 결론 변경 시 동기화.
     @State private var conclusionDraft: String = ""
     /// v0.5.0 — 사용자가 선택한 공유 대상 (chip 토글). 기본 — 모든 참가자 선택.
@@ -63,6 +70,25 @@ struct DiscussionDetailView: View {
                 shareTargets = Set(viewModel.discussion.participants)
                 shareInitialized = true
             }
+        }
+        .sheet(isPresented: $showResumeSheet) {
+            ResumeDiscussionSheet(
+                additionalTurns: $resumeAdditionalTurns,
+                currentTurns: viewModel.envelopes.count,
+                currentMaxTurns: viewModel.discussion.maxTurns,
+                onCancel: { showResumeSheet = false },
+                onConfirm: {
+                    let extra = resumeAdditionalTurns
+                    showResumeSheet = false
+                    guard let factory = resumeDispatcherFactory else { return }
+                    Task {
+                        await viewModel.resume(
+                            addingTurns: extra,
+                            dispatcherFactory: factory
+                        )
+                    }
+                }
+            )
         }
         // I-NEW-6 fix — 옛 modal `.alert("오류", ...)` 제거. cryptic UUID + Swift
         // literal 이 사용자를 차단했음. 같은 정보가 곧바로 detail bar 의
@@ -240,6 +266,17 @@ struct DiscussionDetailView: View {
                 Text(viewModel.terminationReason.map { "사유: \($0.localizedDescription)" } ?? "종료")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if viewModel.state == .completed {
+                    // v0.6.0 — completed 만 재개 가능. aborted 는 영구 종료.
+                    Button("재개", systemImage: "arrow.clockwise") {
+                        resumeAdditionalTurns = 5
+                        showResumeSheet = true
+                    }
+                    .disabled(resumeDispatcherFactory == nil || viewModel.isResuming)
+                    .help(resumeDispatcherFactory == nil
+                          ? "컨트롤 타워가 준비되지 않았어요"
+                          : "추가 턴 수를 정해 토론 재개")
+                }
             }
             Spacer()
             if viewModel.discardedCount > 0 {
@@ -338,6 +375,56 @@ private struct DiscussionBubble: View {
         case .report: return .green
         case .fyi: return .secondary
         }
+    }
+}
+
+// MARK: - Resume sheet
+
+/// v0.6.0 — 종료된 토론을 추가 턴과 함께 다시 active 로 살림.
+/// 카피는 사용자 멘탈 모델 ("끝난 토론을 이어서 더 토의시킬게요") 에 맞춤.
+private struct ResumeDiscussionSheet: View {
+    @Binding var additionalTurns: Int
+    let currentTurns: Int
+    let currentMaxTurns: Int
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("토론 재개")
+                .font(.title2.weight(.semibold))
+            Text("완료된 토론에 턴을 추가해 다시 진행해요. 기존 발언은 그대로 유지되고, 다음 발언부터 새로 dispatch 됩니다.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                Text("추가 턴")
+                    .frame(width: 70, alignment: .leading)
+                Stepper(value: $additionalTurns, in: 1...50) {
+                    EmptyView()
+                }
+                .labelsHidden()
+                Text("\(additionalTurns) 턴")
+                    .monospacedDigit()
+                    .frame(minWidth: 56, alignment: .leading)
+            }
+
+            Text("현재 \(currentTurns)/\(currentMaxTurns) → 재개 후 최대 \(currentMaxTurns + additionalTurns) 턴")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+                Button("취소", role: .cancel, action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("재개", action: onConfirm)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 380)
     }
 }
 

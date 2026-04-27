@@ -27,6 +27,9 @@ public actor DiscussionEngine {
         /// pause/terminate 가 dispatch 중간에 끼어든 결과 reply 를 폐기 (must-fix MED-1).
         case turnDiscarded(speaker: AgentID, envelopeId: EnvelopeID)
         case terminated(reason: TerminationReason)
+        /// v0.5.0 — 결론이 set/update 됨. text 에 새 값 (사용자가 비워서 nil 로
+        /// 만든 경우 빈 문자열). 사회자 자동 요약 + 사용자 편집 양쪽에서 발행.
+        case conclusionUpdated(text: String)
     }
 
     public enum TerminationReason: String, Sendable, Equatable {
@@ -101,6 +104,35 @@ public actor DiscussionEngine {
         try discussion.transition(to: .active)
         broadcast(.stateChanged(.active))
         await scheduleAdvance()
+    }
+
+    // MARK: - v0.5.0 — Conclusion (자동 요약 + 사용자 편집)
+
+    /// 사회자 (요약기) 가 토론 본문을 한 단락으로 압축 → discussion.conclusion 갱신.
+    /// `.conclusionUpdated` event 로 viewModel 에 알림. 호출자가 다시 호출 (`다시
+    /// 요약`) 하면 덮어씀.
+    ///
+    /// - Parameters:
+    ///   - envelopes: 발언 envelope 들 (viewModel.envelopes 그대로 전달).
+    ///   - summarizer: production 은 control 어댑터 wrapper, 테스트는 fake.
+    /// - Returns: 새 결론 텍스트.
+    @discardableResult
+    public func summarizeConclusion(
+        envelopes: [MessageEnvelope],
+        using summarizer: DiscussionConclusionSummarizer
+    ) async throws -> String {
+        let summary = try await summarizer.summarize(
+            discussion: discussion, envelopes: envelopes
+        )
+        discussion.setConclusion(summary)
+        broadcast(.conclusionUpdated(text: summary))
+        return summary
+    }
+
+    /// 사용자가 결론을 직접 편집했을 때 — 어댑터 호출 없이 즉시 set + broadcast.
+    public func setConclusion(_ text: String) {
+        discussion.setConclusion(text)
+        broadcast(.conclusionUpdated(text: text))
     }
 
     /// 사용자 강제 종료. 진행 중 턴 결과는 무시.
@@ -384,4 +416,17 @@ public struct IsolatedTurnDispatcher: DiscussionDispatching {
 
 public enum IsolatedDispatchError: Error, Equatable, Sendable {
     case missingSubSession(speaker: AgentID)
+}
+
+// MARK: - v0.5.0 — Conclusion summarizer
+
+/// 토론 본문 → 한 단락 결론 텍스트.
+///
+/// production 구현은 control 어댑터 (LLM) 호출 wrapper, 테스트는 immediate fake.
+/// engine 은 이 protocol 만 의존해 ClaudeAdapter 등 구체 어댑터에 결합되지 않음.
+public protocol DiscussionConclusionSummarizer: Sendable {
+    func summarize(
+        discussion: Discussion,
+        envelopes: [MessageEnvelope]
+    ) async throws -> String
 }

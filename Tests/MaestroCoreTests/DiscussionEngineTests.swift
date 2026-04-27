@@ -407,6 +407,26 @@ actor RecordingIsolatedSessionFactory: IsolatedSessionFactory {
     }
 }
 
+actor StringBox {
+    private(set) var value: String?
+    func set(_ text: String) { value = text }
+}
+
+/// 단일 fixed 텍스트 반환 — Phase 3 테스트용.
+struct StubSummarizer: DiscussionConclusionSummarizer {
+    let text: String
+    func summarize(
+        discussion: Discussion, envelopes: [MessageEnvelope]
+    ) async throws -> String { text }
+}
+
+struct ThrowingSummarizer: DiscussionConclusionSummarizer {
+    struct Boom: Error {}
+    func summarize(
+        discussion: Discussion, envelopes: [MessageEnvelope]
+    ) async throws -> String { throw Boom() }
+}
+
 /// 즉시 echo 응답을 돌려주는 미니 어댑터 — IsolatedTurnDispatcher 단위 테스트용.
 struct EchoAdapter: AgentAdapter {
     static let id = "echo"

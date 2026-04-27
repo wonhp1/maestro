@@ -33,7 +33,14 @@ final class MaestroIsolatedSessionFactory: IsolatedSessionFactory {
         sessionId: SessionID
     ) async throws -> ResolvedAgent {
         let folder: FolderRegistration? = await MainActor.run {
-            folderViewModel.folders.first { folder in
+            // v0.5.0: control 메타 에이전트는 literal "control" 로 dispatch 됨
+            // (자식 에이전트는 합성 syntheticAgentID). 결론 요약기가 "control" 호출.
+            if agent.rawValue == "control" {
+                return folderViewModel.folders.first { folder in
+                    ControlAgentProvisioner.isControlFolder(folder.id)
+                }
+            }
+            return folderViewModel.folders.first { folder in
                 ControlTowerEnvironment.syntheticAgentID(for: folder.id) == agent
             }
         }

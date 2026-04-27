@@ -146,7 +146,13 @@ struct ControlTowerView: View {
     private var detailContent: some View {
         if let discussionID = environment.selectedDiscussionID,
            let discussionVM = environment.discussionStore.get(id: discussionID) {
-            DiscussionDetailView(viewModel: discussionVM, onInterrupt: nil)
+            DiscussionDetailView(
+                viewModel: discussionVM,
+                onInterrupt: nil,
+                summarizer: environment.folderViewModel.map { fvm in
+                    environment.makeConclusionSummarizer(folderViewModel: fvm)
+                }
+            )
         } else {
             folderDetailContent
         }

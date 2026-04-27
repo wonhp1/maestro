@@ -5,6 +5,26 @@ import SwiftUI
 ///
 /// `ControlTowerView` 의 file_length 한도 (500) 회피용 분리. 의미는 한 묶음.
 extension ControlTowerEnvironment {
+    /// v0.5.0 — 토론 dispatch + 결론 요약에 공통 사용되는 IsolatedSessionFactory.
+    func makeIsolatedSessionFactory(
+        folderViewModel: FolderViewModel
+    ) -> MaestroIsolatedSessionFactory {
+        MaestroIsolatedSessionFactory(
+            folderViewModel: folderViewModel,
+            adapterRegistry: adapterRegistry
+        )
+    }
+
+    /// v0.5.0 — DiscussionViewModel 에 주입할 결론 요약기. 호출 시점마다 새 인스턴스.
+    func makeConclusionSummarizer(
+        folderViewModel: FolderViewModel
+    ) -> DiscussionConclusionSummarizer {
+        MaestroDiscussionConclusionSummarizer(
+            factory: makeIsolatedSessionFactory(folderViewModel: folderViewModel),
+            summarizer: AgentID(rawValue: "control")
+        )
+    }
+
     /// "+ 새 토론" 시트의 backing viewModel — 현재 폴더 목록을 참가자 옵션으로,
     /// startAction 은 `startDiscussion` 으로 위임.
     public func makeDiscussionStartViewModel() -> DiscussionStartViewModel {
@@ -59,10 +79,7 @@ extension ControlTowerEnvironment {
             // 도달 X. 도달 시는 명시적 에러 — silent fallback 금지 (M1 review).
             throw DiscussionStartError.invalidInput
         }
-        let factory = MaestroIsolatedSessionFactory(
-            folderViewModel: folderViewModel,
-            adapterRegistry: adapterRegistry
-        )
+        let factory = makeIsolatedSessionFactory(folderViewModel: folderViewModel)
         let dispatcher = IsolatedTurnDispatcher(
             factory: factory,
             from: AgentID(rawValue: "control")

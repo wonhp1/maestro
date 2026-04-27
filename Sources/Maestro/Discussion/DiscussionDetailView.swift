@@ -5,8 +5,12 @@ import SwiftUI
 struct DiscussionDetailView: View {
     @Bindable var viewModel: DiscussionViewModel
     let onInterrupt: ((String) async -> Void)?
+    /// v0.5.0 — 결론 자동 요약기 (control 어댑터 호출). nil 이면 "다시 요약" 버튼 비활성.
+    var summarizer: DiscussionConclusionSummarizer?
 
     @State private var interruptDraft: String = ""
+    /// v0.5.0 — TextEditor binding state. 결론 변경 시 동기화.
+    @State private var conclusionDraft: String = ""
     /// 사용자가 최근 envelope 가까이에 있을 때만 auto-scroll — 위로 스크롤해서 과거 읽고
     /// 있을 때 yank 방지 (must-fix UX-1).
     @State private var pinnedToBottom: Bool = true
@@ -23,6 +27,19 @@ struct DiscussionDetailView: View {
             if viewModel.state == .active || viewModel.state == .paused {
                 interruptComposer
             }
+            if viewModel.state == .completed || viewModel.state == .aborted {
+                Divider()
+                conclusionSection
+            }
+        }
+        .onChange(of: viewModel.discussion.conclusion) { _, new in
+            // engine 이 conclusionUpdated broadcast 했을 때 draft 동기화
+            if (new ?? "") != conclusionDraft {
+                conclusionDraft = new ?? ""
+            }
+        }
+        .onAppear {
+            conclusionDraft = viewModel.discussion.conclusion ?? ""
         }
         // I-NEW-6 fix — 옛 modal `.alert("오류", ...)` 제거. cryptic UUID + Swift
         // literal 이 사용자를 차단했음. 같은 정보가 곧바로 detail bar 의
@@ -237,6 +254,68 @@ struct DiscussionDetailView: View {
         guard !trimmed.isEmpty, let onInterrupt else { return }
         interruptDraft = ""
         Task { await onInterrupt(trimmed) }
+    }
+
+    // MARK: - v0.5.0 Conclusion section
+
+    @ViewBuilder
+    private var conclusionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .foregroundStyle(.tint)
+                Text("결론")
+                    .font(.headline)
+                Spacer()
+                if viewModel.isSummarizing {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("요약 중…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Button {
+                    guard let summarizer else { return }
+                    Task { await viewModel.summarizeConclusion(using: summarizer) }
+                } label: {
+                    Label(
+                        viewModel.discussion.conclusion == nil ? "요약" : "다시 요약",
+                        systemImage: "sparkles"
+                    )
+                }
+                .disabled(summarizer == nil || viewModel.isSummarizing)
+                .help(summarizer == nil
+                      ? "요약기를 사용할 수 없어요"
+                      : "사회자 (control) 가 토론 본문을 한 단락으로 요약")
+            }
+            TextEditor(text: $conclusionDraft)
+                .font(.body)
+                .frame(minHeight: 80, maxHeight: 200)
+                .padding(6)
+                .background(Color.secondary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(alignment: .topLeading) {
+                    if conclusionDraft.isEmpty && !viewModel.isSummarizing {
+                        Text("아직 결론이 없어요. 위 \"요약\" 또는 직접 입력하세요.")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 14)
+                            .padding(.leading, 12)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onChange(of: conclusionDraft) { _, new in
+                    // 사용자 편집을 engine 에 전달 (debounce 없음 — viewModel 액션은 cheap)
+                    let current = viewModel.discussion.conclusion ?? ""
+                    if new != current {
+                        Task { await viewModel.updateConclusion(new) }
+                    }
+                }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.secondary.opacity(0.04))
     }
 }
 

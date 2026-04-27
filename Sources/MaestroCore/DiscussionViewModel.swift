@@ -87,6 +87,8 @@ public final class DiscussionViewModel {
         case .terminated(let reason):
             self.terminationReason = reason
             self.currentSpeaker = nil
+        case .conclusionUpdated:
+            await refreshDiscussionSnapshot()
         }
     }
 
@@ -122,5 +124,28 @@ public final class DiscussionViewModel {
 
     public func dismissError() {
         lastError = nil
+    }
+
+    // MARK: - v0.5.0 — Conclusion
+
+    /// 사회자 (요약기) 호출. 진행 중 표시 위해 `isSummarizing` 토글.
+    public private(set) var isSummarizing: Bool = false
+
+    public func summarizeConclusion(using summarizer: DiscussionConclusionSummarizer) async {
+        guard !isSummarizing else { return }
+        isSummarizing = true
+        defer { isSummarizing = false }
+        do {
+            _ = try await engine.summarizeConclusion(
+                envelopes: envelopes, using: summarizer
+            )
+        } catch {
+            lastError = "결론 요약 실패: \(error.localizedDescription)"
+        }
+    }
+
+    /// 사용자 직접 편집. 빈 문자열도 허용 (사용자가 결론을 지우고 싶을 수 있음).
+    public func updateConclusion(_ text: String) async {
+        await engine.setConclusion(text)
     }
 }

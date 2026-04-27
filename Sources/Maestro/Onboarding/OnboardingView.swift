@@ -9,6 +9,10 @@ struct OnboardingView: View {
     @Bindable var viewModel: OnboardingViewModel
     let onAddFolder: @MainActor () async -> Void
 
+    /// v0.8.0 — detectAgents step 의 환경 검사 + 자동 설치 driver.
+    /// View 가 소유 — OnboardingView 가 dismiss 되면 함께 해제.
+    @State private var environmentVM = EnvironmentSetupViewModel()
+
     var body: some View {
         VStack(spacing: 24) {
             header
@@ -57,18 +61,18 @@ struct OnboardingView: View {
                 Text("Maestro 는 여러 AI 코딩 에이전트(Claude, Aider 등)를 한 화면에서 오케스트레이션 하는 macOS 앱입니다.\n\n폴더 단위로 에이전트를 묶고 메시지를 주고받으며, 토론을 운영할 수 있습니다.")
                     .foregroundStyle(.secondary)
             case .detectAgents:
-                if viewModel.detectedAdapters.isEmpty {
-                    Text("설치된 에이전트를 자동 감지합니다. 환경설정에서 활성화 여부를 변경할 수 있습니다.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("감지됨").font(.subheadline).foregroundStyle(.secondary)
-                        ForEach(viewModel.detectedAdapters, id: \.self) { id in
-                            Label(id, systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                EnvironmentSetupSheet(viewModel: environmentVM)
+                    .task {
+                        // VM callback 으로 모든 status 변화 (claude/aider/git 등) 를 부모 VM 에
+                        // 동기화 — onChange(of: claudeReady) 는 aider 단독 변경을 놓침.
+                        // .task 가 view 마다 호출돼도 callback 는 단순 set 이라 idempotent.
+                        environmentVM.onStatusChange = { [weak viewModel] status in
+                            var ids: [String] = []
+                            if status.claude.isReady { ids.append("claude") }
+                            if status.aider.isReady { ids.append("aider") }
+                            viewModel?.setDetectedAdapters(ids)
                         }
                     }
-                }
             case .firstFolder:
                 VStack(alignment: .leading, spacing: 12) {
                     Text("작업할 폴더를 한 개 추가해 보세요. 나중에 사이드바에서 더 추가할 수 있습니다.")

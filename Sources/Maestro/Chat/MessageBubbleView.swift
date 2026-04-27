@@ -1,4 +1,5 @@
 import MaestroCore
+import MarkdownUI
 import SwiftUI
 
 /// 단일 채팅 메시지 — role 별 정렬/색상 + markdown 렌더링 + status 표시.
@@ -53,18 +54,13 @@ struct MessageBubbleView: View {
     @ViewBuilder
     private var bubbleContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(MarkdownRenderer.segments(displayContent), id: \.self) { segment in
-                switch segment {
-                case .prose(let text):
-                    if !text.isEmpty {
-                        Text(MarkdownRenderer.render(text))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                case .codeBlock(let lang, let code):
-                    CodeBlockView(language: lang, code: code)
-                }
-            }
+            // v0.5.1 — MarkdownUI 로 렌더 (헤더/리스트/코드/표/인용 모두 지원).
+            // 자체 MarkdownRenderer 의 plain Text 한계 (헤더/리스트가 raw 로 보임)
+            // 해결. 코드 블록은 MaestroCodeBlockTheme 가 monospaced + 배경 + 언어 라벨.
+            Markdown(displayContent)
+                .markdownTheme(.maestro)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
             // streaming 중에는 항상 작은 인디케이터 표시 (content 가 비어있지 않아도).
             if case .streaming = message.status {
                 StreamingDot()

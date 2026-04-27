@@ -1,4 +1,5 @@
 import MaestroCore
+import MarkdownUI
 import SwiftUI
 
 /// 한 토론의 Slack-style 메인 뷰 — 헤더 + 메시지 리스트 + 컨트롤 + 끼어들기 입력창.
@@ -296,9 +297,11 @@ private struct DiscussionBubble: View {
                         .foregroundStyle(.secondary)
                     typeBadge
                 }
-                // adapter 응답 body — bidi/control sanitize (must-fix SEC-1)
-                Text(DisplayTextSanitizer.sanitize(envelope.body))
-                    .font(.body)
+                // v0.5.1 — MarkdownUI 로 렌더 (이전 plain Text 가 가독성 망쳤음).
+                // sanitize 는 raw text 단계에서 — MarkdownUI 가 다시 파싱하므로
+                // bidi/control 문자 제거가 syntax 깨지 않도록 sanitize 후 전달.
+                Markdown(DisplayTextSanitizer.sanitize(envelope.body))
+                    .markdownTheme(.maestro)
                     .textSelection(.enabled)
                     .padding(10)
                     .background(Color.secondary.opacity(0.10))

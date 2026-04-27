@@ -20,6 +20,12 @@ let package = Package(
     dependencies: [
         // Phase 26 — Sparkle 자동 업데이트.
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
+        // v0.5.1 — SwiftUI Markdown 렌더 (헤더/리스트/코드/표/인용 모두 지원).
+        // 자체 MarkdownRenderer 가 plain Text 한계로 가독성 떨어졌던 문제 해결.
+        .package(
+            url: "https://github.com/gonzalezreal/swift-markdown-ui.git",
+            from: "2.4.0"
+        ),
     ],
     targets: [
         .executableTarget(
@@ -28,6 +34,7 @@ let package = Package(
                 "MaestroCore",
                 "MaestroAdapters",
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
             ],
             path: "Sources/Maestro",
             swiftSettings: [

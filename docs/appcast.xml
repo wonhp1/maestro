@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Maestro</title>
+    <link>https://wonhp1.github.io/maestro/appcast.xml</link>
+    <description>Maestro 자동 업데이트 피드</description>
+    <language>ko</language>
+    <!-- 새 릴리즈마다 item 추가. 최신 entry 가 위에. -->
+  </channel>
+</rss>

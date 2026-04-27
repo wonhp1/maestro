@@ -8,13 +8,17 @@ public struct ChatView: View {
     /// 호출자 (ControlTowerView) 가 `$environment.pendingSlashInsertion` 으로 주입.
     /// 테스트/preview 는 `.constant(nil)` 사용.
     var slashInsertion: Binding<String?>
+    /// v0.7.0 Phase 2 — `/` 인라인 popover 용 registry. nil 이면 popup 비활성.
+    var slashRegistry: SlashCommandRegistry?
 
     public init(
         viewModel: ChatViewModel,
-        slashInsertion: Binding<String?> = .constant(nil)
+        slashInsertion: Binding<String?> = .constant(nil),
+        slashRegistry: SlashCommandRegistry? = nil
     ) {
         self.viewModel = viewModel
         self.slashInsertion = slashInsertion
+        self.slashRegistry = slashRegistry
     }
 
     public var body: some View {
@@ -26,7 +30,8 @@ public struct ChatView: View {
             ChatComposer(
                 viewModel: viewModel,
                 onSend: { viewModel.send() },
-                slashInsertion: slashInsertion
+                slashInsertion: slashInsertion,
+                slashRegistry: slashRegistry
             )
             errorBar
         }

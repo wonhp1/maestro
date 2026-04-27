@@ -12,6 +12,8 @@ struct DispatchComposer: View {
     /// 호출자가 `$environment.pendingSlashInsertion` 로 binding 주입.
     /// 테스트/preview 는 `.constant(nil)` 사용.
     var slashInsertion: Binding<String?>
+    /// v0.7.0 Phase 2 — `/` 인라인 자동완성 popover registry. nil 이면 popup X.
+    var slashRegistry: SlashCommandRegistry?
 
     @State private var draft: String = ""
     @State private var targetID: FolderID?
@@ -56,11 +58,19 @@ struct DispatchComposer: View {
         .frame(maxWidth: 180)
     }
 
+    @ViewBuilder
     private var messageField: some View {
-        TextField("메시지 입력 — Cmd+Return 으로 전송", text: $draft, axis: .vertical)
+        let field = TextField("메시지 입력 — Cmd+Return 으로 전송", text: $draft, axis: .vertical)
             .textFieldStyle(.roundedBorder)
             .lineLimit(1...6)
             .onSubmit(send)
+        if let slashRegistry {
+            field.modifier(SlashSuggestionsModifier(
+                draft: $draft, registry: slashRegistry
+            ))
+        } else {
+            field
+        }
     }
 
     private var sendButton: some View {

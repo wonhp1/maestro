@@ -44,7 +44,8 @@ struct ControlTowerView: View {
                             onSend: { folder, body in
                                 await environment.sendDispatch(to: folder, body: body)
                             },
-                            slashInsertion: $environment.pendingSlashInsertion
+                            slashInsertion: $environment.pendingSlashInsertion,
+                            slashRegistry: environment.slashCommandRegistry
                         )
                     }
                 }
@@ -210,7 +211,8 @@ struct ControlTowerView: View {
             if let chatViewModel = environment.chatSessionStore.cached(for: id) {
                 ChatView(
                     viewModel: chatViewModel,
-                    slashInsertion: $environment.pendingSlashInsertion
+                    slashInsertion: $environment.pendingSlashInsertion,
+                    slashRegistry: environment.slashCommandRegistry
                 )
             } else if environment.chatSessionStore.loadingFolderIDs.contains(id) {
                 VStack(spacing: 12) {

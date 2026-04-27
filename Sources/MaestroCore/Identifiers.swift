@@ -66,6 +66,28 @@ public struct Identifier<Tag>: Hashable, Sendable, CustomStringConvertible {
     public var description: String { rawValue }
 }
 
+/// Dictionary<Identifier, V> 가 JSON 에서 keyed object 로 인코딩되도록.
+/// 미적용 시 Swift 기본 동작은 alternating `[k, v, k, v]` 배열 — 디스크/인스펙션
+/// 가독성이 나쁘고 옛 형식 호환에도 불리.
+extension Identifier: CodingKeyRepresentable {
+    public var codingKey: CodingKey {
+        StringCodingKey(stringValue: rawValue)
+    }
+
+    public init?<T: CodingKey>(codingKey: T) {
+        let raw = codingKey.stringValue
+        guard (try? Identifier.ensureValid(raw)) != nil else { return nil }
+        self.init(rawValue: raw)
+    }
+}
+
+private struct StringCodingKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+
 extension Identifier: Codable {
     /// 디스크/네트워크에서 역직렬화 시에도 반드시 검증.
     public init(from decoder: Decoder) throws {

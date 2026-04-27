@@ -175,4 +175,67 @@ final class DiscussionTests: XCTestCase {
         let decoded = try JSONDecoder.maestro.decode(DiscussionTurn.self, from: data)
         XCTAssertEqual(decoded, turn)
     }
+
+    // MARK: v0.5.0 — subSessions / conclusion / sharing
+
+    /// 옛 형식 (subSessions/conclusion/sharedWith/sharedAt 없음) 디코딩 시
+    /// 비어있는 dict / nil 로 자연스럽게 백워드 컴팩.
+    func testDecodeWithoutNewFieldsBackwardCompat() throws {
+        let legacyJSON = #"""
+        {
+          "id": "d-legacy",
+          "title": "옛 토론",
+          "participants": ["cpo", "cto"],
+          "moderatorId": "control",
+          "maxTurns": 4,
+          "state": "active",
+          "turns": []
+        }
+        """#
+        let data = Data(legacyJSON.utf8)
+        let decoded = try JSONDecoder.maestro.decode(Discussion.self, from: data)
+        XCTAssertEqual(decoded.id.rawValue, "d-legacy")
+        XCTAssertTrue(decoded.subSessions.isEmpty)
+        XCTAssertNil(decoded.conclusion)
+        XCTAssertNil(decoded.sharedWith)
+        XCTAssertNil(decoded.sharedAt)
+    }
+
+    func testRoundtripPreservesSubSessions() throws {
+        var original = makeDiscussion(state: .active)
+        let cpoSession = SessionID(rawValue: "11111111-1111-1111-1111-111111111111")
+        let ctoSession = SessionID(rawValue: "22222222-2222-2222-2222-222222222222")
+        original.assignSubSession(cpoSession, for: AgentID(rawValue: "cpo"))
+        original.assignSubSession(ctoSession, for: AgentID(rawValue: "cto"))
+        let data = try JSONEncoder.maestro.encode(original)
+        let decoded = try JSONDecoder.maestro.decode(Discussion.self, from: data)
+        XCTAssertEqual(decoded.subSessions[AgentID(rawValue: "cpo")], cpoSession)
+        XCTAssertEqual(decoded.subSessions[AgentID(rawValue: "cto")], ctoSession)
+        XCTAssertEqual(decoded, original)
+    }
+
+    func testRoundtripPreservesConclusionAndShare() throws {
+        var original = makeDiscussion(state: .completed)
+        original.setConclusion("우리는 Q3 에 신규 시장 진입을 결정함.")
+        original.markShared(
+            with: [AgentID(rawValue: "cpo"), AgentID(rawValue: "cto")],
+            at: fixedDate
+        )
+        let data = try JSONEncoder.maestro.encode(original)
+        let decoded = try JSONDecoder.maestro.decode(Discussion.self, from: data)
+        XCTAssertEqual(decoded.conclusion, "우리는 Q3 에 신규 시장 진입을 결정함.")
+        XCTAssertEqual(
+            decoded.sharedWith,
+            [AgentID(rawValue: "cpo"), AgentID(rawValue: "cto")]
+        )
+        XCTAssertEqual(decoded.sharedAt, fixedDate)
+    }
+
+    func testInitDefaultsAreEmpty() {
+        let d = makeDiscussion()
+        XCTAssertTrue(d.subSessions.isEmpty)
+        XCTAssertNil(d.conclusion)
+        XCTAssertNil(d.sharedWith)
+        XCTAssertNil(d.sharedAt)
+    }
 }

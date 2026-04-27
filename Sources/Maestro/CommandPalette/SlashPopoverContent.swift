@@ -11,21 +11,30 @@ struct SlashPopoverContent: View {
     let onSelect: (DiscoveredSlashCommand) -> Void
 
     var body: some View {
-        // ScrollView + LazyVStack — 100+ 후보 시 popover 가 화면 넘는 것 방지
-        // (must-fix /team MED). 빈 query (`/` 만) 시 전체 후보 노출 가능.
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(candidates.enumerated()), id: \.element.id) { index, item in
-                    row(item: item, isSelected: index == selectedIndex)
-                        .onTapGesture { onSelect(item) }
-                    if index < candidates.count - 1 {
-                        Divider()
+        // ScrollView + LazyVStack — 100+ 후보 시 popover 가 화면 넘는 것 방지.
+        // ScrollViewReader 로 selectedIndex 변경 시 visible 영역 안에 유지
+        // (사용자 보고: 화살표 이동 시 scroll 안 따라옴).
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(candidates.enumerated()), id: \.element.id) { index, item in
+                        row(item: item, isSelected: index == selectedIndex)
+                            .id(index)
+                            .onTapGesture { onSelect(item) }
+                        if index < candidates.count - 1 {
+                            Divider()
+                        }
                     }
                 }
+                .padding(.vertical, 2)
             }
-            .padding(.vertical, 2)
+            .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, maxHeight: 360)
+            .onChange(of: selectedIndex) { _, newIndex in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    proxy.scrollTo(newIndex, anchor: .center)
+                }
+            }
         }
-        .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, maxHeight: 360)
     }
 
     @ViewBuilder

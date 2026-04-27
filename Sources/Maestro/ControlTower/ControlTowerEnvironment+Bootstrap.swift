@@ -154,24 +154,12 @@ extension ControlTowerEnvironment {
             SkillSource(directory: skillsDir),
             id: "skill"
         )
-        // v0.7.0 Phase 2 fix — builtin source 등록. claude binary 위치는 ClaudeAdapter
-        // 의 detect() 로 lazy 추출. 미설치면 prober 가 빈 결과 반환 (graceful).
-        let claudeAdapter = await adapterRegistry.adapter(for: ClaudeAdapter.id)
-        let claudePath = await (claudeAdapter as? ClaudeAdapter)?
-            .detect()
-            .executablePath
-        let cacheDir = (resolvedPaths?.root ?? FileManager.default.temporaryDirectory)
-        let cacheFile = cacheDir.appending(
-            path: "builtin-slash-cache.json", directoryHint: .notDirectory
-        )
-        await slashCommandRegistry.register(
-            BuiltinSlashCommandProber(
-                claudeExecutable: claudePath,
-                cacheFile: cacheFile,
-                executor: DefaultProcessExecutor(timeout: 10)
-            ),
-            id: "builtin"
-        )
+        // v0.7.0 Phase 2 fix-2 — BuiltinSlashCommandProber 등록 제거.
+        // 사용자 보고: "/help isn't available in this environment" — Claude SDK
+        // (claude -p) 모드는 TUI-only 슬래시 명령 (/help, /clear 등) 거부.
+        // popover 에 보여도 dispatch 실패 → false advertising. 사용자 정의
+        // (~/.claude/commands/*.md) 와 skill 만 노출. SDK-supported 명령 fetch
+        // 인프라 생기면 (Anthropic API) 재도입 검토.
         let watcher = SlashCommandWatcher(
             directories: [commandsDir, skillsDir],
             registry: slashCommandRegistry

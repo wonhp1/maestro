@@ -31,6 +31,11 @@ jobs:
   release:
     runs-on: macos-15
     timeout-minutes: 30
+    # Job-level env — secrets 를 boolean 으로 한 번만 평가해 step `if:` 에서 사용.
+    # step-level `if: secrets.X != ''` 직접 평가는 GitHub schema 가 거부 (run #8 fail).
+    env:
+      HAS_SIGNING: ${{ secrets.MAESTRO_SIGN_P12_BASE64 != '' }}
+      HAS_NOTARY: ${{ secrets.MAESTRO_NOTARY_APP_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,10 +51,7 @@ jobs:
         run: scripts/build-app.sh
 
       - name: Import codesign cert
-        # secret 컨텍스트는 step `if:` 에서 직접 평가 가능. step-level `env:` 는
-        # condition 평가 시점엔 없으므로 audit 가 발견한 self-referential 버그
-        # 회피.
-        if: ${{ secrets.MAESTRO_SIGN_P12_BASE64 != '' }}
+        if: env.HAS_SIGNING == 'true'
         env:
           P12: ${{ secrets.MAESTRO_SIGN_P12_BASE64 }}
           P12_PASS: ${{ secrets.MAESTRO_SIGN_P12_PASSWORD }}
@@ -70,7 +72,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASS" $KEYCHAIN
 
       - name: Store notarytool credentials
-        if: ${{ secrets.MAESTRO_NOTARY_APP_PASSWORD != '' }}
+        if: env.HAS_NOTARY == 'true'
         env:
           APPLE_ID: ${{ secrets.MAESTRO_NOTARY_APPLE_ID }}
           TEAM_ID: ${{ secrets.MAESTRO_NOTARY_TEAM_ID }}

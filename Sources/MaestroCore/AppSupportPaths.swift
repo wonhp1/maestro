@@ -65,6 +65,10 @@ public struct AppSupportPaths: Sendable {
     public var failedDir: URL { root.appending(path: "failed", directoryHint: .isDirectory) }
     public var logsDir: URL { root.appending(path: "logs", directoryHint: .isDirectory) }
     public var crashesDir: URL { root.appending(path: "crashes", directoryHint: .isDirectory) }
+    /// v0.5.0 — 토론별 영구 메모 저장. `<discussion-id>.md` (frontmatter + body).
+    public var discussionMemosDir: URL {
+        root.appending(path: "discussion-memos", directoryHint: .isDirectory)
+    }
 
     // MARK: Per-entity paths
 
@@ -102,6 +106,13 @@ public struct AppSupportPaths: Sendable {
         failedDir.appending(path: "\(envelope.rawValue).json", directoryHint: .notDirectory)
     }
 
+    /// v0.5.0 — 토론 메모 파일 경로 (`discussion-memos/<id>.md`).
+    public func discussionMemoFile(id: ThreadID) -> URL {
+        discussionMemosDir.appending(
+            path: "\(id.rawValue).md", directoryHint: .notDirectory
+        )
+    }
+
     // MARK: Directory creation
 
     /// 모든 디렉토리를 (존재하지 않으면) 생성. 첫 실행 시 호출.
@@ -113,7 +124,7 @@ public struct AppSupportPaths: Sendable {
     ) throws {
         let allDirs = [
             root, sessionsDir, agentsDir, inboxRoot, outboxRoot,
-            threadsDir, failedDir, logsDir, crashesDir,
+            threadsDir, failedDir, logsDir, crashesDir, discussionMemosDir,
         ]
         for dir in allDirs {
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)

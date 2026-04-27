@@ -156,11 +156,13 @@ public final class DiscussionViewModel {
     /// 공유 진행 중 표시 — UI 가 ProgressView/buttons disable 에 사용.
     public private(set) var isSharing: Bool = false
 
-    /// 결론을 자식 에이전트들의 메인 세션에 typing.
+    /// 결론을 자식 에이전트들의 메인 세션에 typing + 영구 메모 저장 (옵션 C).
     /// - Note: `discussion.conclusion` 이 비어있으면 lastError set 후 no-op.
+    /// - Parameter memoStore: nil 이면 메모 저장 건너뜀 (테스트/onboarding 경로).
     public func shareConclusion(
         with targets: [AgentID],
-        using sharer: DiscussionConclusionSharing
+        using sharer: DiscussionConclusionSharing,
+        memoStore: AgentMemoStore? = nil
     ) async {
         guard !isSharing else { return }
         let conclusion = (discussion.conclusion ?? "")
@@ -182,6 +184,23 @@ public final class DiscussionViewModel {
                 with: targets
             )
             await engine.markShared(with: targets, at: Date())
+            // v0.5.0 옵션 C — 영구 메모 저장. share 와 atomically 묶이지 않지만
+            // share 성공 후에만 시도 → 부분 실패는 사용자가 메모 패널에서 정정.
+            if let memoStore {
+                let memo = DiscussionMemo(
+                    id: discussion.id,
+                    title: discussion.title,
+                    body: conclusion,
+                    sharedWith: targets,
+                    updatedAt: Date(),
+                    active: true
+                )
+                do {
+                    try await memoStore.save(memo)
+                } catch {
+                    lastError = "메모 저장 실패 (공유는 완료): \(error.localizedDescription)"
+                }
+            }
         } catch {
             lastError = "공유 실패: \(error.localizedDescription)"
         }

@@ -37,6 +37,9 @@ public actor ClaudeAdapter: AgentAdapter {
     /// 매 sendMessage 마다 호출 — nil 이면 system prompt 미적용. control agent 가
     /// 동적 폴더 목록 주입에 사용 (Phase 27).
     private let appendSystemPromptProvider: @Sendable () -> String?
+    /// v0.5.0 — Session 별 추가 system prompt (예: 토론 메모). 결과는 위 provider
+    /// 와 `\n\n` 으로 concat. nil 이면 추가 없음. async — actor 기반 store 호출 가능.
+    private let sessionScopedPromptProvider: @Sendable (Session) async -> String?
 
     private var sessions: [SessionID: Session] = [:]
     /// 첫 메시지 전송이 완료된 세션 — 이후 호출은 `--resume`.
@@ -53,7 +56,8 @@ public actor ClaudeAdapter: AgentAdapter {
         sanitizer: EnvironmentSanitizer = .default,
         userCommandsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: ".claude/commands", directoryHint: .isDirectory),
-        appendSystemPromptProvider: @escaping @Sendable () -> String? = { nil }
+        appendSystemPromptProvider: @escaping @Sendable () -> String? = { nil },
+        sessionScopedPromptProvider: @escaping @Sendable (Session) async -> String? = { _ in nil }
     ) throws {
         self.executor = executor
         self.streamer = streamer
@@ -63,6 +67,7 @@ public actor ClaudeAdapter: AgentAdapter {
         self.userCommandsDirectory = userCommandsDirectory
         self.logger = MaestroLogger(category: .adapter)
         self.appendSystemPromptProvider = appendSystemPromptProvider
+        self.sessionScopedPromptProvider = sessionScopedPromptProvider
     }
 
     // MARK: - AgentAdapter conformance
@@ -141,7 +146,7 @@ public actor ClaudeAdapter: AgentAdapter {
         in session: Session
     ) async throws -> MessageEnvelope {
         let resolved = try await resolveExecutable(for: session)
-        let arguments = buildArguments(
+        let arguments = await buildArguments(
             for: envelope,
             session: session,
             outputFormat: "json"
@@ -203,7 +208,7 @@ public actor ClaudeAdapter: AgentAdapter {
         continuation: AsyncThrowingStream<ResponseChunk, Error>.Continuation
     ) async throws {
         let resolved = try await resolveExecutable(for: session)
-        let arguments = buildArguments(
+        let arguments = await buildArguments(
             for: envelope,
             session: session,
             outputFormat: "stream-json"
@@ -255,11 +260,12 @@ public actor ClaudeAdapter: AgentAdapter {
     }
 
     /// 공용 argv 빌더 — 첫 호출 vs resume 분기. stream-json 시 --verbose 자동 포함.
+    /// v0.5.0: async — sessionScopedPromptProvider (메모 store actor) 호출 위해.
     private func buildArguments(
         for envelope: MessageEnvelope,
         session: Session,
         outputFormat: String
-    ) -> [String] {
+    ) async -> [String] {
         let isFirst = !initializedSessions.contains(session.id)
         let sessionFlag = isFirst ? "--session-id" : "--resume"
         var args = [
@@ -272,9 +278,16 @@ public actor ClaudeAdapter: AgentAdapter {
         }
         // Phase 27 — control agent 처럼 동적 system prompt 주입.
         // 매 호출마다 fresh — 폴더 추가/제거 즉시 반영.
-        if let systemPrompt = appendSystemPromptProvider(), !systemPrompt.isEmpty {
+        // v0.5.0: legacy provider + session-scoped (memo) provider 두 source 를
+        // `\n\n` 으로 concat. 둘 다 nil/empty 면 flag 자체를 안 보냄.
+        var pieces: [String] = []
+        if let p = appendSystemPromptProvider(), !p.isEmpty { pieces.append(p) }
+        if let p = await sessionScopedPromptProvider(session), !p.isEmpty {
+            pieces.append(p)
+        }
+        if !pieces.isEmpty {
             args.append("--append-system-prompt")
-            args.append(systemPrompt)
+            args.append(pieces.joined(separator: "\n\n"))
         }
         return args
     }

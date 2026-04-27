@@ -7,6 +7,8 @@ struct DiscussionConclusionView: View {
     @Bindable var viewModel: DiscussionViewModel
     var summarizer: DiscussionConclusionSummarizer?
     var sharer: DiscussionConclusionSharing?
+    /// v0.5.0 — 영구 메모 store. share 시 함께 저장. nil 이면 메모 X (테스트/legacy).
+    var memoStore: AgentMemoStore?
     var agentDisplayResolver: (AgentID) -> String
 
     @Binding var conclusionDraft: String
@@ -105,7 +107,11 @@ struct DiscussionConclusionView: View {
                 Button {
                     guard let sharer else { return }
                     let targets = Array(shareTargets)
-                    Task { await viewModel.shareConclusion(with: targets, using: sharer) }
+                    Task {
+                        await viewModel.shareConclusion(
+                            with: targets, using: sharer, memoStore: memoStore
+                        )
+                    }
                 } label: {
                     Label("공유", systemImage: "paperplane")
                 }

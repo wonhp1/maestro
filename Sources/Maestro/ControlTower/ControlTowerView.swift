@@ -155,6 +155,7 @@ struct ControlTowerView: View {
                 sharer: environment.folderViewModel.map { fvm in
                     environment.makeConclusionSharer(folderViewModel: fvm)
                 },
+                memoStore: environment.agentMemoStore,
                 agentDisplayResolver: environment.folderViewModel.map { fvm in
                     fvm.displayName(for:)
                 } ?? { $0.rawValue }
@@ -262,6 +263,9 @@ public final class ControlTowerEnvironment {
     public let discussionStore: DiscussionStore
     /// Control 메타 에이전트가 매 호출 시 fresh 폴더 목록 읽도록 하는 thread-safe snapshot (Phase 27).
     public let folderListSnapshot: FolderListSnapshot
+    /// v0.5.0 — 토론 결론 영구 메모 저장소. ClaudeAdapter 가 매 sendMessage 마다
+    /// `activeMemos(for:)` 로 조회 → systemPrompt 에 append.
+    public let agentMemoStore: AgentMemoStore
     public internal(set) var detectedAdapterIDs: [String] = []
     /// Phase v0.4.3 — 사용자가 사이드바에서 선택한 토론 (있을 때 detail 전환).
     public var selectedDiscussionID: ThreadID?
@@ -301,7 +305,11 @@ public final class ControlTowerEnvironment {
         adapterSelector: AdapterSelector? = nil,
         adapterRegistry: AdapterRegistry = AdapterRegistry(),
         discussionStore: DiscussionStore = DiscussionStore(),
-        folderListSnapshot: FolderListSnapshot = FolderListSnapshot()
+        folderListSnapshot: FolderListSnapshot = FolderListSnapshot(),
+        agentMemoStore: AgentMemoStore = AgentMemoStore(
+            directory: FileManager.default.temporaryDirectory
+                .appending(path: "maestro-memo-fallback", directoryHint: .isDirectory)
+        )
     ) {
         self.pathsProvider = pathsProvider
         self.pickerFactory = pickerFactory
@@ -328,6 +336,7 @@ public final class ControlTowerEnvironment {
         self.adapterRegistry = adapterRegistry
         self.discussionStore = discussionStore
         self.folderListSnapshot = folderListSnapshot
+        self.agentMemoStore = agentMemoStore
         // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
         // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
         self.preferencesStore = preferencesStore
@@ -344,11 +353,21 @@ public final class ControlTowerEnvironment {
     /// production 기본 환경 — NSOpenPanelFolderPicker + AdapterSelector (Phase 24).
     /// Control 폴더는 동적 system prompt 가 주입된 별도 ClaudeAdapter (Phase 27).
     public static func makeProduction() -> ControlTowerEnvironment {
-        let candidates = collectAdapterCandidates()
+        // v0.5.0 — paths 를 makeProduction 에서 한 번 미리 해결해 메모 저장소 path
+        // 를 정확히 set. 실패 시 (희귀) temp 폴더 fallback.
+        let resolvedPaths = (try? AppSupportPaths.forApplication())
+        let memoStore = AgentMemoStore(
+            directory: resolvedPaths?.discussionMemosDir
+                ?? FileManager.default.temporaryDirectory
+                    .appending(path: "maestro-memo", directoryHint: .isDirectory)
+        )
+        let folderSnapshot = FolderListSnapshot()
+        let candidates = collectAdapterCandidates(
+            memoStore: memoStore, folderSnapshot: folderSnapshot
+        )
         let selector = AdapterSelector(candidates: candidates, fallback: MockAdapter())
         let registry = AdapterRegistry()
         warmupAdapterRegistry(registry: registry, adapters: Array(candidates.values))
-        let folderSnapshot = FolderListSnapshot()
         let controlClaudeAdapter = makeControlClaudeAdapter(folderSnapshot: folderSnapshot)
         return ControlTowerEnvironment(
             pathsProvider: { try AppSupportPaths.forApplication() },
@@ -359,13 +378,33 @@ public final class ControlTowerEnvironment {
             adapterSelector: selector,
             adapterRegistry: registry,
             discussionStore: DiscussionStore(),
-            folderListSnapshot: folderSnapshot
+            folderListSnapshot: folderSnapshot,
+            agentMemoStore: memoStore
         )
     }
 
-    private static func collectAdapterCandidates() -> [String: any AgentAdapter] {
+    private static func collectAdapterCandidates(
+        memoStore: AgentMemoStore,
+        folderSnapshot: FolderListSnapshot
+    ) -> [String: any AgentAdapter] {
         var map: [String: any AgentAdapter] = [:]
-        if let claude = try? ClaudeAdapter() { map[ClaudeAdapter.id] = claude }
+        // v0.5.0 — 자식 (project) ClaudeAdapter 는 매 sendMessage 시 그 폴더로 공유된
+        // 활성 메모를 systemPrompt 에 inject. session.folderPath 로 합성 agentID
+        // 역산 (folderSnapshot 사용) → memoStore.activeMemos(for:) 조회.
+        let memoProvider: @Sendable (Session) async -> String? = { [memoStore, folderSnapshot] session in
+            // folderPath → folderID → 합성 AgentID
+            let folders = folderSnapshot.read()
+            guard let folder = folders.first(where: {
+                $0.path.standardizedFileURL == session.folderPath.standardizedFileURL
+            }) else { return nil }
+            let agentID = Maestro.syntheticAgentID(for: folder.id)
+            let memos = await memoStore.activeMemos(for: agentID)
+            guard !memos.isEmpty else { return nil }
+            return DiscussionMemoSystemPrompt.build(memos: memos)
+        }
+        if let claude = try? ClaudeAdapter(sessionScopedPromptProvider: memoProvider) {
+            map[ClaudeAdapter.id] = claude
+        }
         if let aider = try? AiderAdapter() { map[AiderAdapter.id] = aider }
         return map
     }
@@ -453,6 +492,9 @@ public final class ControlTowerEnvironment {
             let paths = try pathsProvider()
             try paths.ensureAllDirectoriesExist()
             self.resolvedPaths = paths
+            // v0.5.0 — 메모 디스크에서 로드 (있는 경우만). 실패는 silently — 메모는
+            // 개별 파일 단위 자체 복원성 + UI 가 새로 만들 수 있어 차단 X.
+            try? await agentMemoStore.loadAll()
             // PreferencesStore — 디스크 경로 확정된 후 생성 (테스트가 미리 주입한 경우 보존).
             if preferencesStore == nil {
                 let store = PreferencesStore(path: paths.preferencesFile)

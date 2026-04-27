@@ -9,6 +9,8 @@ struct DiscussionDetailView: View {
     var summarizer: DiscussionConclusionSummarizer?
     /// v0.5.0 — 결론 공유기 (자식 메인 세션 typing). nil 이면 "공유" 버튼 비활성.
     var sharer: DiscussionConclusionSharing?
+    /// v0.5.0 — 영구 메모 저장소. share 시 함께 저장.
+    var memoStore: AgentMemoStore?
     /// v0.5.0 — agentDisplayResolver: AgentID → 폴더 displayName. 칩 라벨에 사용.
     /// 기본값은 raw — 호출자가 FolderViewModel.displayName(for:) 주입 권장.
     var agentDisplayResolver: (AgentID) -> String = { $0.rawValue }
@@ -41,6 +43,7 @@ struct DiscussionDetailView: View {
                     viewModel: viewModel,
                     summarizer: summarizer,
                     sharer: sharer,
+                    memoStore: memoStore,
                     agentDisplayResolver: agentDisplayResolver,
                     conclusionDraft: $conclusionDraft,
                     shareTargets: $shareTargets

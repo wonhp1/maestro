@@ -23,6 +23,11 @@ public final class ControlTowerEnvironment {
     public let adapterSelector: AdapterSelector?
     /// 등록된 모든 어댑터 — vendor picker 가 detect 호출에 사용 (Phase v0.4.3).
     public let adapterRegistry: AdapterRegistry
+    /// v0.7.0 Phase 3 fix — control 폴더 전용 ClaudeAdapter (별도 인스턴스).
+    /// 일반 selector 의 adapter 와 다른 actor 라 slash_commands capture 도 별개.
+    /// wireSlashCommands 가 둘 다 source 등록.
+    @ObservationIgnored
+    public let controlClaudeAdapter: ClaudeAdapter?
     /// Phase v0.4.3 — 토론 store + UI 진입점.
     public let discussionStore: DiscussionStore
     /// Control 메타 에이전트가 매 호출 시 fresh 폴더 목록 읽도록 하는 thread-safe snapshot (Phase 27).
@@ -73,7 +78,8 @@ public final class ControlTowerEnvironment {
         agentMemoStore: AgentMemoStore = AgentMemoStore(
             directory: FileManager.default.temporaryDirectory
                 .appending(path: "maestro-memo-fallback", directoryHint: .isDirectory)
-        )
+        ),
+        controlClaudeAdapter: ClaudeAdapter? = nil
     ) {
         self.pathsProvider = pathsProvider
         self.pickerFactory = pickerFactory
@@ -101,6 +107,7 @@ public final class ControlTowerEnvironment {
         self.discussionStore = discussionStore
         self.folderListSnapshot = folderListSnapshot
         self.agentMemoStore = agentMemoStore
+        self.controlClaudeAdapter = controlClaudeAdapter
         // PreferencesStore 는 bootstrap() 에서 paths 해결 후 생성.
         // 호출자가 명시적 store 주입 시 (테스트) 그대로 사용.
         self.preferencesStore = preferencesStore
@@ -140,7 +147,8 @@ public final class ControlTowerEnvironment {
             adapterRegistry: registry,
             discussionStore: DiscussionStore(),
             folderListSnapshot: folderSnapshot,
-            agentMemoStore: memoStore
+            agentMemoStore: memoStore,
+            controlClaudeAdapter: controlClaudeAdapter
         )
     }
 

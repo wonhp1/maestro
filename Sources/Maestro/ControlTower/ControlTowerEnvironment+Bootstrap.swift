@@ -159,10 +159,21 @@ extension ControlTowerEnvironment {
         // 동작 가능 builtin 을 capture (background). source 가 매 호출 시 fresh
         // snapshot 받아 popover 에 노출. 첫 dispatch 전엔 빈 배열 → popover 에 안
         // 보임 (cold start trade-off — 첫 메시지 후 builtin 자동 추가).
+        //
+        // Maestro 가 ClaudeAdapter 를 두 인스턴스 사용:
+        // - selector 의 일반 adapter (project 폴더 채팅용)
+        // - controlClaudeAdapter (control 폴더 전용 — 별도 system prompt provider)
+        // 두 actor 가 별개라 capture 도 별도 — 둘 다 source 등록.
         if let claude = await adapterRegistry.adapter(for: ClaudeAdapter.id) {
             await slashCommandRegistry.register(
                 AdapterSlashCommandSource(adapter: claude),
                 id: "adapter-builtin-claude"
+            )
+        }
+        if let ctrl = controlClaudeAdapter {
+            await slashCommandRegistry.register(
+                AdapterSlashCommandSource(adapter: ctrl),
+                id: "adapter-builtin-claude-control"
             )
         }
         let watcher = SlashCommandWatcher(

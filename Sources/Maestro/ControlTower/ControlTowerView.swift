@@ -38,7 +38,13 @@ struct ControlTowerView: View {
         } content: {
             detailContent
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    OrchestrationStatusBar(model: environment.orchestrationStatus)
+                    OrchestrationStatusBar(
+                        model: environment.orchestrationStatus,
+                        agentDisplayResolver: { agentID in
+                            environment.folderViewModel?.displayName(for: agentID)
+                                ?? agentID.rawValue
+                        }
+                    )
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let folderViewModel = environment.folderViewModel,
@@ -56,6 +62,10 @@ struct ControlTowerView: View {
                     environment.folderViewModel?.folders
                         .first(where: { $0.id == id })?.displayName
                         ?? id.rawValue
+                },
+                agentDisplayResolver: { agentID in
+                    environment.folderViewModel?.displayName(for: agentID)
+                        ?? agentID.rawValue
                 }
             )
         }

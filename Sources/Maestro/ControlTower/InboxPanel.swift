@@ -8,6 +8,10 @@ struct InboxPanel: View {
     @Bindable var store: InboxStore
     let selectedFolderID: FolderID?
     let folderTitleResolver: (FolderID) -> String
+    /// v0.4.8 — AgentID → displayName (예: agent-{uuid} → "cfo", "control" → "Control").
+    /// 기본값은 raw rawValue (옛 호출자 호환). 호출자가 FolderViewModel.displayName(for:)
+    /// 를 넘기면 사용자 친화 이름이 row 에 표시됨.
+    var agentDisplayResolver: (AgentID) -> String = { $0.rawValue }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,7 +83,12 @@ struct InboxPanel: View {
     private var itemList: some View {
         List {
             ForEach(filteredItems) { item in
-                InboxRow(item: item, folderTitle: folderTitleResolver(item.folderID))
+                InboxRow(
+                    item: item,
+                    folderTitle: folderTitleResolver(item.folderID),
+                    senderDisplay: agentDisplayResolver(item.from),
+                    recipientDisplay: agentDisplayResolver(item.to)
+                )
                     .onTapGesture {
                         store.markRead(itemID: item.id)
                     }
@@ -97,6 +106,8 @@ struct InboxPanel: View {
 private struct InboxRow: View {
     let item: InboxItem
     let folderTitle: String
+    let senderDisplay: String
+    let recipientDisplay: String
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -106,7 +117,7 @@ private struct InboxRow: View {
                     Text(folderTitle)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(item.from.rawValue)
+                    Text(senderDisplay)
                         .font(.caption2)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
@@ -115,7 +126,7 @@ private struct InboxRow: View {
                     Image(systemName: "arrow.right")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Text(item.to.rawValue)
+                    Text(recipientDisplay)
                         .font(.caption2)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)

@@ -193,3 +193,26 @@ public final class FolderViewModel {
         }
     }
 }
+
+// MARK: - Display name resolver (v0.4.8)
+
+public extension FolderViewModel {
+    /// AgentID → 사용자 친화 displayName.
+    ///
+    /// - "control" literal → control 폴더의 displayName ("Control" 등)
+    /// - "agent-{folder-uuid}" 합성 ID → 매칭 폴더의 displayName
+    /// - 매칭 폴더가 없으면 raw rawValue 폴백 (폴더 삭제 후 영속 envelope 등)
+    ///
+    /// `folders` 배열을 매번 lookup 하므로 새 폴더 추가/이름 변경/삭제 시 자동 반영.
+    /// linear scan 이지만 폴더 수가 보통 한 자릿수라 비용 무시 가능.
+    func displayName(for agentID: AgentID) -> String {
+        if agentID.rawValue == "control" {
+            return folders.first(where: {
+                ControlAgentProvisioner.isControlFolder($0.id)
+            })?.displayName ?? "Control"
+        }
+        return folders.first { folder in
+            "agent-\(folder.id.rawValue.lowercased())" == agentID.rawValue
+        }?.displayName ?? agentID.rawValue
+    }
+}

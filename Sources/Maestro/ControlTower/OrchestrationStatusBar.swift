@@ -6,6 +6,9 @@ import SwiftUI
 /// 비어있을 때는 자체 hidden — 화면 공간 차지 안 함.
 struct OrchestrationStatusBar: View {
     @Bindable var model: OrchestrationStatusModel
+    /// v0.4.8 — AgentID → displayName resolver. 호출자가 FolderViewModel.displayName
+    /// (for:) 를 넘기면 raw "agent-{uuid}" 대신 폴더 이름이 칩에 표시됨.
+    var agentDisplayResolver: (AgentID) -> String = { $0.rawValue }
 
     var body: some View {
         if model.entries.isEmpty {
@@ -14,7 +17,11 @@ struct OrchestrationStatusBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(model.entries) { entry in
-                        EntryChip(entry: entry)
+                        EntryChip(
+                            entry: entry,
+                            fromDisplay: agentDisplayResolver(entry.from),
+                            toDisplay: agentDisplayResolver(entry.to)
+                        )
                     }
                 }
                 .padding(.horizontal, 12)
@@ -30,17 +37,19 @@ struct OrchestrationStatusBar: View {
 
 private struct EntryChip: View {
     let entry: OrchestrationEntry
+    let fromDisplay: String
+    let toDisplay: String
 
     var body: some View {
         HStack(spacing: 6) {
             indicator
-            Text(entry.from.rawValue)
+            Text(fromDisplay)
                 .font(.caption)
                 .lineLimit(1)
             Image(systemName: "arrow.right")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(entry.to.rawValue)
+            Text(toDisplay)
                 .font(.caption)
                 .lineLimit(1)
             stateLabel
@@ -100,11 +109,11 @@ private struct EntryChip: View {
     private var accessibilityText: String {
         switch entry.state {
         case .running:
-            return "진행 중: \(entry.from.rawValue)에서 \(entry.to.rawValue)로"
+            return "진행 중: \(fromDisplay)에서 \(toDisplay)로"
         case .completed:
-            return "완료: \(entry.from.rawValue)에서 \(entry.to.rawValue)로"
+            return "완료: \(fromDisplay)에서 \(toDisplay)로"
         case .failed(let msg):
-            return "실패: \(entry.from.rawValue)에서 \(entry.to.rawValue)로 — \(msg)"
+            return "실패: \(fromDisplay)에서 \(toDisplay)로 — \(msg)"
         }
     }
 }

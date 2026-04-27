@@ -48,10 +48,9 @@ public struct ChatView: View {
     }
 
     private var modelLabel: String {
-        // v0.5.2 — currentModel 우선 (어댑터가 응답에서 capture).
-        // 없으면 session.modelId. 둘 다 없으면 "감지 중…" (응답 한 번도 안 받음).
+        // v0.5.5 — 정직: explicit modelId → 응답 capture → "감지 중…" (추측 X).
         let raw = viewModel.currentModel ?? viewModel.session.modelId ?? ""
-        if raw.isEmpty { return "감지 중…" }
+        if raw.isEmpty { return "감지 중… (메시지 보내면 자동 감지)" }
         return Self.prettyModel(raw)
     }
 

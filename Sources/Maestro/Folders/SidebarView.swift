@@ -108,7 +108,8 @@ struct SidebarView: View {
                 FolderSettingsSheet(
                     folder: folder,
                     viewModel: viewModel,
-                    detectionViewModel: detectionViewModel
+                    detectionViewModel: detectionViewModel,
+                    adapterRegistry: adapterRegistry
                 ) {
                     showingSettings = false
                     settingsTargetFolder = nil

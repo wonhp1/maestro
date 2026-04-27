@@ -151,20 +151,23 @@ public actor ClaudeAdapter: AgentAdapter {
         logger.info("destroySession id=\(id.rawValue)")
     }
 
-    /// v0.5.2 — 우선순위:
-    /// 1. 사용자 지정 session.modelId
-    /// 2. 응답에서 capture 한 lastSeen (가장 정확 — Claude Code 의 실제 동작 모델)
-    /// 3. Claude Code CLI 의 알려진 default (현재 sonnet 4.5) — 응답 1회 받기 전 표시용
-    /// 사용자가 CLI 쪽에서 default 를 바꿨다면 첫 응답 후 lastSeen 으로 자동 정정.
-    public func resolvedModel(for session: Session) async -> String? {
-        if let explicit = session.modelId, !explicit.isEmpty { return explicit }
-        if let lastSeen = lastSeenModelBySession[session.id] { return lastSeen }
-        return Self.knownDefaultModel
+    /// v0.5.5 — Claude Code CLI 가 인식하는 stable alias. full version (e.g.,
+    /// `claude-sonnet-4-6`) 은 시간에 따라 변하므로 alias 만 노출 — `--help` 의
+    /// `--model` 설명 ("alias for the latest model e.g. 'sonnet' or 'opus'") 과 일치.
+    public func availableModels() async -> [String] {
+        ["sonnet", "opus", "haiku"]
     }
 
-    /// v0.5.2 — Claude Code CLI 의 stock default. CLI 가 새 모델로 default 옮기면
-    /// 여기 + 사용자가 한 번 응답 받으면 자동 capture 가 정정.
-    public static let knownDefaultModel = "claude-sonnet-4-5"
+    /// v0.5.5 — 우선순위 (정직, 추측 X):
+    /// 1. 사용자 지정 session.modelId
+    /// 2. 응답에서 capture 한 lastSeen (가장 정확 — Claude Code 의 실제 동작 모델)
+    /// 3. nil — UI 가 "감지 중…" 표시. 첫 메시지 보내면 자동 capture.
+    /// (옛 v0.5.3 의 knownDefaultModel hardcode fallback 은 사용자 환경의 실제
+    /// 모델이 아닐 수 있어 제거. 거짓 정보보다 정직한 "감지 중…" 이 낫다.)
+    public func resolvedModel(for session: Session) async -> String? {
+        if let explicit = session.modelId, !explicit.isEmpty { return explicit }
+        return lastSeenModelBySession[session.id]
+    }
 
     public func sendMessage(
         _ envelope: MessageEnvelope,

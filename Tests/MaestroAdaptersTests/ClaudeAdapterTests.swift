@@ -277,9 +277,10 @@ final class ClaudeAdapterTests: XCTestCase {
         )
         let adapter = try makeAdapter(executor: exec, executableExists: true)
         let session = try await adapter.createSession(folderPath: tempHome)
-        // 응답 전엔 fallback (knownDefaultModel) — UI 가 "감지 중…" 대신 stock 값 표시.
+        // v0.5.5 — 응답 전엔 nil (정직). 옛 v0.5.3 의 knownDefaultModel fallback
+        // 은 사용자 환경 실제 모델과 다를 수 있어 제거.
         let before = await adapter.resolvedModel(for: session)
-        XCTAssertEqual(before, ClaudeAdapter.knownDefaultModel)
+        XCTAssertNil(before)
         _ = try await adapter.sendMessage(makeTaskEnvelope(body: "hi"), in: session)
         // 응답 후 lastSeen 으로 정정.
         let after = await adapter.resolvedModel(for: session)

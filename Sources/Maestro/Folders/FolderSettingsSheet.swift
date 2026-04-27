@@ -11,21 +11,27 @@ struct FolderSettingsSheet: View {
 
     /// 어댑터 감지 VM — 있으면 라이브 목록 사용, 없으면 폴더 자신의 어댑터만 표시 (테스트/preview).
     var detectionViewModel: AdapterDetectionViewModel?
+    /// v0.5.5 — 어댑터로부터 사용 가능 모델 alias 받아옴. nil 이면 picker 숨김.
+    var adapterRegistry: AdapterRegistry?
 
     @State private var displayName: String
     @State private var adapterId: String
     /// v0.5.1 — 모델 선택. "" = 기본 (어댑터 default), 그 외 = 명시적 modelId.
     @State private var modelId: String
+    /// v0.5.5 — 어댑터별 alias 리스트 (async 로 받아와서 cache).
+    @State private var availableModels: [String] = []
 
     init(
         folder: FolderRegistration,
         viewModel: FolderViewModel,
         detectionViewModel: AdapterDetectionViewModel? = nil,
+        adapterRegistry: AdapterRegistry? = nil,
         dismiss: @escaping () -> Void
     ) {
         self.folder = folder
         self.viewModel = viewModel
         self.detectionViewModel = detectionViewModel
+        self.adapterRegistry = adapterRegistry
         self.dismiss = dismiss
         _displayName = State(initialValue: folder.displayName)
         _adapterId = State(initialValue: folder.adapterId.rawValue)
@@ -56,15 +62,26 @@ struct FolderSettingsSheet: View {
                     }
                 }
 
-                if adapterId == "claude" {
+                if !availableModels.isEmpty {
                     Picker("모델", selection: $modelId) {
-                        ForEach(claudeModelOptions, id: \.id) { opt in
-                            Text(opt.label).tag(opt.id)
+                        Text("기본 (CLI 가 결정 — 응답 후 자동 감지)").tag("")
+                        ForEach(availableModels, id: \.self) { alias in
+                            Text(alias).tag(alias)
                         }
                     }
+                    .help("어댑터가 보고하는 stable alias 목록. 정확한 full version 은 응답 후 헤더에서 자동 표시.")
                 }
             }
             .formStyle(.grouped)
+            .task(id: adapterId) {
+                // v0.5.5 — 어댑터 변경 시 alias 리스트 다시 fetch.
+                guard let registry = adapterRegistry else { return }
+                guard let adapter = await registry.adapter(for: adapterId) else {
+                    availableModels = []
+                    return
+                }
+                availableModels = await adapter.availableModels()
+            }
 
             if let hint = currentAdapterHint {
                 hintRow(hint)
@@ -177,16 +194,5 @@ struct FolderSettingsSheet: View {
             await viewModel.changeModel(id: folder.id, to: normalizedModelId)
         }
         dismiss()
-    }
-
-    /// v0.5.1 — Claude Code CLI 가 인식하는 모델 ID 옵션. 빈 string = 기본
-    /// (CLI default). 새 모델 추가 시 이 리스트만 갱신.
-    private var claudeModelOptions: [(id: String, label: String)] {
-        [
-            ("", "기본 (Claude CLI 설정)"),
-            ("claude-sonnet-4-5", "Sonnet 4.5"),
-            ("claude-opus-4-1", "Opus 4.1"),
-            ("claude-haiku-4-5", "Haiku 4.5"),
-        ]
     }
 }

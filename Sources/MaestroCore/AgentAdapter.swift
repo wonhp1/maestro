@@ -64,6 +64,12 @@ public protocol AgentAdapter: Sendable {
     /// 세션 컨텍스트에서 사용 가능한 슬래시 명령. 기본 구현은 빈 배열.
     func listSlashCommands(in session: Session) async -> [SlashCommand]
 
+    /// v0.5.5 — 이 어댑터가 사용자에게 노출할 수 있는 모델 alias 목록.
+    /// 빈 배열 = 어댑터가 모름 (UI 가 picker 숨김).
+    /// Claude → ["sonnet","opus","haiku"], Aider → ["gpt-4o","claude-sonnet",...] 등.
+    /// 기본 구현은 빈 배열 — 어댑터별 override.
+    func availableModels() async -> [String]
+
     /// v0.5.2 — 이 세션이 실제로 사용 중인 LLM 모델 ID. UI 의 모델 표시 라벨이
     /// 호출.
     /// 우선순위 (어댑터별 구현 책임):
@@ -125,6 +131,9 @@ public extension AgentAdapter {
     func resolvedModel(for session: Session) async -> String? {
         session.modelId
     }
+
+    /// v0.5.5 — 기본 구현은 빈 배열. ClaudeAdapter / AiderAdapter 가 override.
+    func availableModels() async -> [String] { [] }
 
     /// 기본 아이콘 — 미설정 어댑터용 fallback.
     static var iconName: String { "terminal" }

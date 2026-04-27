@@ -23,6 +23,9 @@ struct SidebarView: View {
     /// Phase v0.4.3 — 토론 entry. 두 closure 가 nil 이면 토론 진입점 미표시.
     var discussionStore: DiscussionStore?
     var discussionStartViewModelFactory: (() -> DiscussionStartViewModel)?
+    /// v0.6.0 — FolderSettingsSheet 의 "지금 적용" 시 호출. 호출자 (ControlTowerView)
+    /// 가 ChatSessionStore.evict(folderID:) 로 캐시 invalidate.
+    var onRestartFolderSession: ((FolderID) -> Void)?
     /// Phase v0.4.3 — 토론 선택 binding. 사용자가 토론을 선택하면 detail 이 전환됨.
     var selectedDiscussionID: Binding<ThreadID?> = .constant(nil)
     @State private var activeAlert: SidebarAlert?
@@ -109,7 +112,8 @@ struct SidebarView: View {
                     folder: folder,
                     viewModel: viewModel,
                     detectionViewModel: detectionViewModel,
-                    adapterRegistry: adapterRegistry
+                    adapterRegistry: adapterRegistry,
+                    onRequestRestart: onRestartFolderSession
                 ) {
                     showingSettings = false
                     settingsTargetFolder = nil

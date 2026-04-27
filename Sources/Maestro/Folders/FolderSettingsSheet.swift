@@ -13,6 +13,13 @@ struct FolderSettingsSheet: View {
     var detectionViewModel: AdapterDetectionViewModel?
     /// v0.5.5 — 어댑터로부터 사용 가능 모델 alias 받아옴. nil 이면 picker 숨김.
     var adapterRegistry: AdapterRegistry?
+    /// v0.6.0 — 모델/어댑터 변경 시 사용자가 "지금 적용" 선택하면 호출. 호출자
+    /// (SidebarView) 가 ChatSessionStore.evict(folderID:) 로 캐시된 ChatViewModel
+    /// 제거 → 다음 진입 시 새 모델로 createSession.
+    /// nil 이면 alert 자체를 띄우지 않음 — 변경은 디스크에 저장되고 다음 진입
+    /// 시 자동 적용 (preview / 테스트 / 부분 wiring 호환). 정상 production 경로
+    /// 는 항상 callback 전달.
+    var onRequestRestart: ((FolderID) -> Void)?
 
     @State private var displayName: String
     @State private var adapterId: String
@@ -20,18 +27,22 @@ struct FolderSettingsSheet: View {
     @State private var modelId: String
     /// v0.5.5 — 어댑터별 alias 리스트 (async 로 받아와서 cache).
     @State private var availableModels: [String] = []
+    /// v0.6.0 — save 후 sessions-affecting 변경 (modelId/adapterId) 이 있으면 표시.
+    @State private var showRestartPrompt: Bool = false
 
     init(
         folder: FolderRegistration,
         viewModel: FolderViewModel,
         detectionViewModel: AdapterDetectionViewModel? = nil,
         adapterRegistry: AdapterRegistry? = nil,
+        onRequestRestart: ((FolderID) -> Void)? = nil,
         dismiss: @escaping () -> Void
     ) {
         self.folder = folder
         self.viewModel = viewModel
         self.detectionViewModel = detectionViewModel
         self.adapterRegistry = adapterRegistry
+        self.onRequestRestart = onRequestRestart
         self.dismiss = dismiss
         _displayName = State(initialValue: folder.displayName)
         _adapterId = State(initialValue: folder.adapterId.rawValue)
@@ -106,6 +117,32 @@ struct FolderSettingsSheet: View {
         .padding(20)
         .frame(width: 520)
         .task { await detectionViewModel?.refresh() }
+        .alert(
+            "지금 적용할까요?",
+            isPresented: $showRestartPrompt
+        ) {
+            // /team review MED — alert / sheet 동시 dismiss 가 stale binding 만들 수
+            // 있어 alert 의 isPresented 를 먼저 false 로 명시.
+            Button("지금 적용") {
+                showRestartPrompt = false
+                onRequestRestart?(folder.id)
+                Task { @MainActor in dismiss() }
+            }
+            Button("나중에", role: .cancel) {
+                showRestartPrompt = false
+                Task { @MainActor in dismiss() }
+            }
+        } message: {
+            // /team review HIGH must-fix — 옛 카피 "(대화 기록은 보존)" 가 misleading.
+            // evict 는 in-memory ChatViewModel 만 제거 — 디스크 (folder.sessionId 와
+            // claude 의 jsonl) 는 그대로지만, 화면의 messages 배열은 비워지고 다음
+            // 진입 시 새 ChatView 가 로드 (어댑터의 --resume 이 디스크 history 사용).
+            Text(
+                "어댑터 또는 모델이 변경됐어요. 다음 폴더 진입 시 자동으로 새 설정이 적용됩니다.\n\n"
+                + "지금 적용 = 캐시된 채팅 세션 즉시 새로 시작 (디스크의 옛 대화 기록은 보존, "
+                + "다음 진입 시 어댑터가 재개하면 다시 보여요)."
+            )
+        }
     }
 
     private var availableAdapters: [String] {
@@ -176,6 +213,13 @@ struct FolderSettingsSheet: View {
         modelId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// v0.6.0 — modelId/adapterId 변경 = ChatViewModel 캐시 invalidation 필요.
+    /// displayName 만 변경은 cosmetic — restart 불요.
+    private var sessionAffectingChange: Bool {
+        adapterId != folder.adapterId.rawValue
+            || normalizedModelId != (folder.modelId ?? "")
+    }
+
     private func applyChanges() async {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedName != folder.displayName {
@@ -193,6 +237,12 @@ struct FolderSettingsSheet: View {
         if normalizedModelId != (folder.modelId ?? "") {
             await viewModel.changeModel(id: folder.id, to: normalizedModelId)
         }
-        dismiss()
+        // v0.6.0 — adapter / model 변경이 있고 onRequestRestart 콜백 set 되어 있으면
+        // 사용자에게 "지금 적용" alert. 없으면 그냥 dismiss (다음 세션부터 적용).
+        if sessionAffectingChange, onRequestRestart != nil {
+            showRestartPrompt = true
+        } else {
+            dismiss()
+        }
     }
 }

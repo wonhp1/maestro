@@ -24,20 +24,7 @@ struct ControlTowerView: View {
 
     var body: some View {
         NavigationSplitView {
-            if let viewModel = environment.folderViewModel {
-                SidebarView(
-                    viewModel: viewModel,
-                    statusStore: environment.statusStore,
-                    inboxStore: environment.inboxStore,
-                    adapterRegistry: environment.adapterRegistry,
-                    discussionStore: environment.discussionStore,
-                    discussionStartViewModelFactory: { environment.makeDiscussionStartViewModel() },
-                    selectedDiscussionID: $environment.selectedDiscussionID
-                )
-            } else {
-                ProgressView("초기화 중…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            sidebarContent
         } content: {
             detailContent
                 .safeAreaInset(edge: .top, spacing: 0) {
@@ -147,6 +134,32 @@ struct ControlTowerView: View {
             environment.menuActionRouter.onSendFeedback = {
                 Task { @MainActor in showFeedbackSheet = true }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        if let viewModel = environment.folderViewModel {
+            SidebarView(
+                viewModel: viewModel,
+                statusStore: environment.statusStore,
+                inboxStore: environment.inboxStore,
+                adapterRegistry: environment.adapterRegistry,
+                discussionStore: environment.discussionStore,
+                discussionStartViewModelFactory: {
+                    environment.makeDiscussionStartViewModel()
+                },
+                onRestartFolderSession: { folderID in
+                    // v0.6.0 — 폴더 설정에서 모델/어댑터 변경 후 "지금 적용" →
+                    // ChatViewModel 캐시 invalidate. 다음 진입 시 새 modelId 로
+                    // createSession.
+                    environment.chatSessionStore.evict(folderID: folderID)
+                },
+                selectedDiscussionID: $environment.selectedDiscussionID
+            )
+        } else {
+            ProgressView("초기화 중…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

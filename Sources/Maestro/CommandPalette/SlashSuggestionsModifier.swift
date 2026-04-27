@@ -70,8 +70,10 @@ struct SlashSuggestionsModifier: ViewModifier {
                         if !isShown { suggestion = nil }
                     }
                 ),
-                attachmentAnchor: .point(.bottomLeading),
-                arrowEdge: .top
+                // 입력창의 top-leading 에 anchor + arrowEdge: .bottom →
+                // popover 가 입력창 위쪽으로 펼쳐짐. 입력창 글자 안 가림.
+                attachmentAnchor: .point(.topLeading),
+                arrowEdge: .bottom
             ) {
                 if let suggestion {
                     SlashPopoverContent(

@@ -6,6 +6,13 @@ import SwiftUI
 struct ChatComposer: View {
     @Bindable var viewModel: ChatViewModel
     var onSend: () -> Void
+    /// v0.7.0 Phase 1 — Cmd+K 팔레트 → 입력창 prepopulate side-channel.
+    /// 호출자 (ChatView) 가 `$environment.pendingSlashInsertion` 로 binding 주입.
+    /// 테스트/preview 는 `.constant(nil)` 사용.
+    /// Race UX (ChatComposer + DispatchComposer 같은 binding share — first-fire wins,
+    /// other no-ops on nil) 는 v0.7.0 Phase 1 의 알려진 trade-off. focus tracking 은
+    /// 후속 polish.
+    var slashInsertion: Binding<String?>
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -31,6 +38,15 @@ struct ChatComposer: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .onChange(of: slashInsertion.wrappedValue) { _, newValue in
+            // pendingSlashInsertion consume — clear 시 self-recursion 은
+            // resolve(nil) → nil → guard exit 로 차단.
+            guard let resolved = SlashInsertionConsumer.resolve(pending: newValue) else {
+                return
+            }
+            viewModel.draft = resolved
+            slashInsertion.wrappedValue = nil
+        }
     }
 
     @ViewBuilder

@@ -8,6 +8,10 @@ import SwiftUI
 struct DispatchComposer: View {
     @Bindable var folderViewModel: FolderViewModel
     let onSend: (FolderRegistration, String) async -> Void
+    /// v0.7.0 Phase 1 — Cmd+K 팔레트 → 입력창 prepopulate side-channel.
+    /// 호출자가 `$environment.pendingSlashInsertion` 로 binding 주입.
+    /// 테스트/preview 는 `.constant(nil)` 사용.
+    var slashInsertion: Binding<String?>
 
     @State private var draft: String = ""
     @State private var targetID: FolderID?
@@ -27,6 +31,14 @@ struct DispatchComposer: View {
         .background(.ultraThinMaterial)
         .onChange(of: folderViewModel.selectedFolderID) { _, newValue in
             if targetID == nil { targetID = newValue }
+        }
+        .onChange(of: slashInsertion.wrappedValue) { _, newValue in
+            // pendingSlashInsertion consume — self-recursion 은 resolve(nil) → guard 차단.
+            guard let resolved = SlashInsertionConsumer.resolve(pending: newValue) else {
+                return
+            }
+            draft = resolved
+            slashInsertion.wrappedValue = nil
         }
     }
 

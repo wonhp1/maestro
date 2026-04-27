@@ -4,9 +4,17 @@ import SwiftUI
 /// 단일 에이전트 채팅 — 메시지 리스트 + composer.
 public struct ChatView: View {
     @Bindable var viewModel: ChatViewModel
+    /// v0.7.0 Phase 1 — `pendingSlashInsertion` side-channel binding.
+    /// 호출자 (ControlTowerView) 가 `$environment.pendingSlashInsertion` 으로 주입.
+    /// 테스트/preview 는 `.constant(nil)` 사용.
+    var slashInsertion: Binding<String?>
 
-    public init(viewModel: ChatViewModel) {
+    public init(
+        viewModel: ChatViewModel,
+        slashInsertion: Binding<String?> = .constant(nil)
+    ) {
         self.viewModel = viewModel
+        self.slashInsertion = slashInsertion
     }
 
     public var body: some View {
@@ -15,9 +23,11 @@ public struct ChatView: View {
             Divider()
             messageList
             Divider()
-            ChatComposer(viewModel: viewModel) {
-                viewModel.send()
-            }
+            ChatComposer(
+                viewModel: viewModel,
+                onSend: { viewModel.send() },
+                slashInsertion: slashInsertion
+            )
             errorBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

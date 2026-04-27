@@ -73,6 +73,28 @@ public final class DiscussionStore {
         orderedViewModels.filter { $0.state == .active }
     }
 
+    /// v0.6.0 — 디스크에서 복원된 history-only 토론 (NoopRestoreDispatcher) 또는
+    /// paused/completed 상태 토론을 다시 active 로 살림.
+    /// dispatcherFactory 는 production IsolatedTurnDispatcher 를 만들어 주입.
+    /// 호출 후 engine.advanceLoop 가 새 dispatcher 로 다음 턴부터 진행.
+    public func resume(
+        id: ThreadID,
+        addingTurns extra: Int,
+        dispatcherFactory: @MainActor () -> DiscussionDispatching
+    ) async throws {
+        guard let viewModel = viewModels[id] else {
+            throw DiscussionError.cannotResume(reason: "토론을 찾을 수 없어요.")
+        }
+        let newDispatcher = dispatcherFactory()
+        try await viewModel.engine.resume(
+            addingTurns: extra,
+            with: newDispatcher
+        )
+        // /team review LOW — polling save 1초 windows 사이 crash 시 resume state
+        // 손실. 즉시 persist 추가.
+        await persistNow(viewModel)
+    }
+
     // MARK: - v0.5.4 — Persistence
 
     /// 부팅 시 디스크에서 모든 토론 record 로드 → viewModel 복원.

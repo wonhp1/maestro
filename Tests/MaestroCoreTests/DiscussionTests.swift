@@ -238,4 +238,66 @@ final class DiscussionTests: XCTestCase {
         XCTAssertNil(d.sharedWith)
         XCTAssertNil(d.sharedAt)
     }
+
+    // MARK: v0.6.0 — resume
+
+    func testResumeFromCompletedExtendsMaxTurnsAndActivates() throws {
+        var d = makeDiscussion(state: .completed, maxTurns: 5)
+        try d.resume(addingTurns: 3)
+        XCTAssertEqual(d.state, .active)
+        XCTAssertEqual(d.maxTurns, 8)
+    }
+
+    func testResumeFromPausedActivatesWithoutAddingTurns() throws {
+        var d = makeDiscussion(state: .paused, maxTurns: 10)
+        try d.resume(addingTurns: 0)
+        XCTAssertEqual(d.state, .active)
+        XCTAssertEqual(d.maxTurns, 10)
+    }
+
+    func testResumeFromAbortedThrows() {
+        var d = makeDiscussion(state: .aborted)
+        XCTAssertThrowsError(try d.resume(addingTurns: 5)) { err in
+            if case DiscussionError.cannotResume = err {
+                // OK
+            } else {
+                XCTFail("expected cannotResume, got \(err)")
+            }
+        }
+    }
+
+    func testResumeFromActiveThrows() {
+        var d = makeDiscussion(state: .active)
+        XCTAssertThrowsError(try d.resume(addingTurns: 1))
+    }
+
+    func testResumeFromPendingThrows() {
+        var d = makeDiscussion(state: .pending)
+        XCTAssertThrowsError(try d.resume(addingTurns: 1))
+    }
+
+    func testResumeRejectsNegativeTurns() {
+        var d = makeDiscussion(state: .completed)
+        XCTAssertThrowsError(try d.resume(addingTurns: -1))
+    }
+
+    /// resume 후 정상적으로 추가 turn 가능한지 (maxTurns extension 효과 검증).
+    func testCanRecordTurnAfterResume() throws {
+        var d = makeDiscussion(state: .completed, maxTurns: 1, turns: [
+            DiscussionTurn(
+                turnIndex: 0,
+                speaker: AgentID(rawValue: "cpo"),
+                envelopeId: EnvelopeID.new(),
+                timestamp: fixedDate
+            ),
+        ])
+        try d.resume(addingTurns: 2)
+        try d.recordTurn(
+            speaker: AgentID(rawValue: "cto"),
+            envelopeId: EnvelopeID.new(),
+            at: fixedDate
+        )
+        XCTAssertEqual(d.turns.count, 2)
+        XCTAssertEqual(d.state, .active, "1/3 turns — 아직 active")
+    }
 }

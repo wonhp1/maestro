@@ -10,7 +10,9 @@ public struct Discussion: Codable, Hashable, Sendable, Identifiable {
     public let title: String
     public let participants: [AgentID]
     public let moderatorId: AgentID?
-    public let maxTurns: Int
+    /// v0.6.0 — let → var: `resume(addingTurns:)` 가 종료된 토론을 다시 active 로
+    /// 살릴 때 maxTurns 를 늘림 (기본 동작은 init 후 변경 X — 신규 토론 동등).
+    public internal(set) var maxTurns: Int
     public private(set) var state: DiscussionState
     public private(set) var turns: [DiscussionTurn]
     /// v0.5.0 — 참가자별 ephemeral subSession ID. 토론 발언이 자식의 메인 세션을
@@ -164,6 +166,38 @@ public extension Discussion {
         sharedWith = targets
         sharedAt = time
     }
+
+    /// v0.6.0 — 종료된 토론을 다시 active 로. 사용자가 명시적으로 resume 의도
+    /// 트리거. **별도 method** 로 분리해 일반 `transition(to:)` 매트릭스 보존
+    /// (옛 testAllInvalidTransitions 깨지지 않게).
+    /// - completed/paused → active. addingTurns 만큼 maxTurns 늘림.
+    /// - aborted 는 영구 종료 — throws (사용자가 의도적으로 abort 한 토론은
+    ///   부활시키지 않음. 새 토론으로 시작 권장).
+    /// - active/pending 에서 호출은 의미 X — throws.
+    /// - addingTurns 0 도 OK (paused → active 만 원할 때).
+    mutating func resume(addingTurns extra: Int) throws {
+        switch state {
+        case .completed:
+            // /team review LOW — completed 에서 extra=0 면 즉시 또 completed 로
+            // re-entry 하며 spurious .terminated 이벤트 발행. 명시적 reject.
+            guard extra > 0 else {
+                throw DiscussionError.cannotResume(
+                    reason: "completed 토론은 addingTurns > 0 필요 (현재 \(turns.count)/\(maxTurns) 도달)."
+                )
+            }
+        case .paused:
+            // paused 는 turns.count < maxTurns 가능 → extra=0 도 의미 (단순 unpause).
+            guard extra >= 0 else {
+                throw DiscussionError.cannotResume(reason: "addingTurns 음수 불가.")
+            }
+        case .aborted:
+            throw DiscussionError.cannotResume(reason: "abort 된 토론은 재개 불가 — 새 토론으로 시작하세요.")
+        case .active, .pending:
+            throw DiscussionError.cannotResume(reason: "이미 진행 가능한 상태 (\(state)) — resume 불요.")
+        }
+        state = .active
+        maxTurns += extra
+    }
 }
 
 /// 토론의 수명 상태.
@@ -227,4 +261,6 @@ public enum DiscussionError: Error, Equatable {
     case notActive(currentState: DiscussionState)
     case notAParticipant(speaker: AgentID)
     case foreignEnvelope(expected: ThreadID, found: ThreadID)
+    /// v0.6.0 — `resume(addingTurns:)` 가 거부.
+    case cannotResume(reason: String)
 }

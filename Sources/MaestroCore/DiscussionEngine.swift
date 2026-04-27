@@ -59,7 +59,9 @@ public actor DiscussionEngine {
 
     public private(set) var discussion: Discussion
     private let moderator: ModeratorStrategy
-    private let dispatcher: DiscussionDispatching
+    /// v0.6.0 — let → var 로 변경. resume 흐름에서 NoopRestoreDispatcher 를
+    /// 실제 production dispatcher (IsolatedTurnDispatcher) 로 hot-swap 가능.
+    private var dispatcher: DiscussionDispatching
     private let initialPrompt: String
     private let moderatorTimeout: TimeInterval
     private var continuations: [UUID: AsyncStream<Event>.Continuation] = [:]
@@ -77,6 +79,37 @@ public actor DiscussionEngine {
         self.dispatcher = dispatcher
         self.initialPrompt = initialPrompt
         self.moderatorTimeout = max(0.1, moderatorTimeout)
+    }
+
+    /// v0.6.0 — dispatcher 핫 스왑. 디스크에서 복원된 토론 (NoopRestoreDispatcher)
+    /// 을 다시 active 로 살릴 때 호출 — engine 재생성 없이 dispatcher 만 교체해
+    /// 기존 envelopes / subSessions 보존.
+    /// 진행 중 advanceLoop 가 있으면 cancel + await — 다음 advance 부터 새 dispatcher.
+    public func swapDispatcher(_ new: DiscussionDispatching) async {
+        if let task = advanceTask {
+            task.cancel()
+            _ = await task.value
+            advanceTask = nil
+        }
+        dispatcher = new
+    }
+
+    /// v0.6.0 — discussion.resume(addingTurns:) 호출 + dispatcher 갱신 +
+    /// scheduleAdvance. 한 entry-point 로 묶음.
+    /// /team review HIGH must-fix — 옛 dispatcher 의 in-flight envelope 이 새 state
+    /// (.active) 로 기록되는 race 차단을 위해 **state mutate 전에 advanceTask drain**.
+    /// 옛 dispatcher 가 cooperative cancellation 무시하고 envelope 반환해도 다음
+    /// recordTurn 시점엔 state 가 옛 값 (completed/paused) 이라 turnDiscarded.
+    public func resume(
+        addingTurns extra: Int,
+        with newDispatcher: DiscussionDispatching
+    ) async throws {
+        // 1. 옛 advance 완전 drain (state 는 아직 옛 terminal 상태).
+        await swapDispatcher(newDispatcher)
+        // 2. 이제 안전하게 state 전이.
+        try discussion.resume(addingTurns: extra)
+        broadcast(.stateChanged(.active))
+        await scheduleAdvance()
     }
 
     /// 토론 시작. `pending → active` 전이 후 첫 턴 spawn.

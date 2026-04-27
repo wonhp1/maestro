@@ -312,15 +312,16 @@ final class EnvelopeRouterTests: XCTestCase {
 
         // dispatch 가 실제로 시작되었는지 deterministic poll — router 가 envelope 를 inbox 에서 consume 하면 파일 사라짐.
         // CI macOS-15 의 DirectoryWatcher event timing 이 200ms fixed sleep 보다 느릴 수 있음 (Phase 20 CI flake 수정).
+        // v0.6.0: 3s → 10s 로 추가 완화 (CI runner 부하 spike 시 5s 초과 관측됨).
         var consumed = false
-        for _ in 0..<60 {
+        for _ in 0..<200 {
             if !FileManager.default.fileExists(atPath: inboxPath.path) {
                 consumed = true
                 break
             }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        XCTAssertTrue(consumed, "router 가 3초 안에 envelope 를 consume 해야 함")
+        XCTAssertTrue(consumed, "router 가 10초 안에 envelope 를 consume 해야 함")
         await router.unbindAll()
 
         // 응답이 outbox 에 정상 기록되었는지 (cancel 되지 않았다는 증거)

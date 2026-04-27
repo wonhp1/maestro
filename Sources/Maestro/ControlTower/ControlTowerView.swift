@@ -476,6 +476,11 @@ public final class ControlTowerEnvironment {
             // v0.5.0 — 메모 디스크에서 로드 (있는 경우만). 실패는 silently — 메모는
             // 개별 파일 단위 자체 복원성 + UI 가 새로 만들 수 있어 차단 X.
             try? await agentMemoStore.loadAll()
+            // v0.5.4 — 토론 디스크 영속화 wiring + 옛 토론 복원 (history-only).
+            discussionStore.storage = DiscussionStorage(directory: paths.discussionsDir)
+            await discussionStore.loadAllPersisted { [weak self] record in
+                await self?.restoreDiscussionViewModel(from: record)
+            }
             // PreferencesStore — 디스크 경로 확정된 후 생성 (테스트가 미리 주입한 경우 보존).
             if preferencesStore == nil {
                 let store = PreferencesStore(path: paths.preferencesFile)

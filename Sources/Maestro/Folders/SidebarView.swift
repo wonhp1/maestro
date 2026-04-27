@@ -27,6 +27,9 @@ struct SidebarView: View {
     var selectedDiscussionID: Binding<ThreadID?> = .constant(nil)
     @State private var activeAlert: SidebarAlert?
     @State private var showingSettings: Bool = false
+    /// v0.5.4 — 우클릭 / 톱니 버튼으로 settings 열 때 대상 folder. 옛 코드는
+    /// selectedFolderID 만 사용 → 우클릭한 folder 와 다른 folder 의 설정이 열리던 버그.
+    @State private var settingsTargetFolder: FolderRegistration?
     @State private var showingDiscussionStart: Bool = false
     @State private var detectionViewModel: AdapterDetectionViewModel?
     @State private var pendingDiscussionStart: DiscussionStartViewModel?
@@ -97,14 +100,18 @@ struct SidebarView: View {
             }
         }
         .sheet(isPresented: $showingSettings) {
-            if let id = viewModel.selectedFolderID,
-               let folder = viewModel.folders.first(where: { $0.id == id }) {
+            // v0.5.4 — settingsTargetFolder 우선 (우클릭/톱니 진입), 없으면
+            // selectedFolderID fallback (단축키 진입).
+            if let folder = settingsTargetFolder
+                ?? viewModel.selectedFolderID
+                .flatMap({ id in viewModel.folders.first(where: { $0.id == id }) }) {
                 FolderSettingsSheet(
                     folder: folder,
                     viewModel: viewModel,
                     detectionViewModel: detectionViewModel
                 ) {
                     showingSettings = false
+                    settingsTargetFolder = nil
                 }
             }
         }
@@ -162,7 +169,11 @@ struct SidebarView: View {
                     FolderRow(
                         folder: folder,
                         status: statusStore?.status(for: folder.id),
-                        unreadCount: inboxStore?.unreadCount(folderID: folder.id) ?? 0
+                        unreadCount: inboxStore?.unreadCount(folderID: folder.id) ?? 0,
+                        onSettings: {
+                            settingsTargetFolder = folder
+                            showingSettings = true
+                        }
                     )
                     .tag(folder.id)
                     .contextMenu {
@@ -172,6 +183,7 @@ struct SidebarView: View {
                             Label("삭제", systemImage: "trash")
                         }
                         Button {
+                            settingsTargetFolder = folder
                             showingSettings = true
                         } label: {
                             Label("설정...", systemImage: "gearshape")
@@ -264,11 +276,16 @@ struct SidebarView: View {
     }
 }
 
-/// 사이드바 한 행 — 폴더 메타 + status badge + unread badge.
+/// 사이드바 한 행 — 폴더 메타 + status badge + unread badge + v0.5.4 톱니 버튼.
 private struct FolderRow: View {
     let folder: FolderRegistration
     let status: AgentStatus?
     let unreadCount: Int
+    /// v0.5.4 — 명시적 설정 버튼 콜백. 우클릭 메뉴만으로는 발견 어려워 항상 보이는
+    /// 톱니바퀴 추가.
+    var onSettings: (() -> Void)?
+
+    @State private var hovering: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -300,15 +317,34 @@ private struct FolderRow: View {
                         .padding(.vertical, 1)
                         .background(Color.secondary.opacity(0.15))
                         .clipShape(Capsule())
+                    if let modelId = folder.modelId, !modelId.isEmpty {
+                        Text(modelId)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                     if let last = folder.lastUsedAt {
                         Text(last, style: .relative)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
+            Spacer(minLength: 0)
+            if let onSettings, hovering {
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("폴더 설정 (이름 / 어댑터 / 모델)")
+                .accessibilityLabel("폴더 설정")
+            }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 

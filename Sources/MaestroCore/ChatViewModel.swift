@@ -53,6 +53,11 @@ public final class ChatViewModel {
         // v0.5.2 — session.modelId 가 명시돼 있으면 즉시 표시. 그 외엔 첫 응답
         // 후 refreshCurrentModel() 가 어댑터로부터 capture.
         self.currentModel = session.modelId
+        // v0.5.4 — view 의 .task 진입 전에도 fallback model 즉시 set 위해 init
+        // 시점에 비동기 refresh 발사. ClaudeAdapter 의 knownDefaultModel 로 즉시 표시.
+        if session.modelId == nil {
+            Task { [weak self] in await self?.refreshCurrentModel() }
+        }
     }
 
     /// v0.4.8 memory-reviewer 권고 — `onAssistantResponseComplete` 가 외부에서 set 된

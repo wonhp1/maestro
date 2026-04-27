@@ -69,6 +69,12 @@ public struct AppSupportPaths: Sendable {
     public var discussionMemosDir: URL {
         root.appending(path: "discussion-memos", directoryHint: .isDirectory)
     }
+    /// v0.5.4 — 토론 메타 + envelopes 영속. `<discussion-id>.json` per-file.
+    /// 기존 threads/<id>.jsonl 은 envelope log 이지만 토론 viewModel state 자체
+    /// (참가자/maxTurns/state/conclusion/envelopes 묶음) 가 별도 영속 필요.
+    public var discussionsDir: URL {
+        root.appending(path: "discussions", directoryHint: .isDirectory)
+    }
 
     // MARK: Per-entity paths
 
@@ -113,6 +119,13 @@ public struct AppSupportPaths: Sendable {
         )
     }
 
+    /// v0.5.4 — 토론 영속화 파일 (`discussions/<id>.json`).
+    public func discussionFile(id: ThreadID) -> URL {
+        discussionsDir.appending(
+            path: "\(id.rawValue).json", directoryHint: .notDirectory
+        )
+    }
+
     // MARK: Directory creation
 
     /// 모든 디렉토리를 (존재하지 않으면) 생성. 첫 실행 시 호출.
@@ -124,7 +137,8 @@ public struct AppSupportPaths: Sendable {
     ) throws {
         let allDirs = [
             root, sessionsDir, agentsDir, inboxRoot, outboxRoot,
-            threadsDir, failedDir, logsDir, crashesDir, discussionMemosDir,
+            threadsDir, failedDir, logsDir, crashesDir,
+            discussionMemosDir, discussionsDir,
         ]
         for dir in allDirs {
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)

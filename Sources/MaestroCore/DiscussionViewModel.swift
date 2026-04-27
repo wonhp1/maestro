@@ -38,6 +38,11 @@ public final class DiscussionViewModel {
         self.envelopes = []  // Phase 14 의 turns 는 metadata; envelopes 는 event 로 수집
     }
 
+    /// v0.5.4 — 디스크에서 복원 시 호출. envelopes seed + state sync.
+    public func restoreEnvelopes(_ envs: [MessageEnvelope]) {
+        self.envelopes = envs
+    }
+
     deinit {
         // MainActor 격리된 task 를 nonisolated deinit 에서 직접 cancel 불가 —
         // detach 한 Task 로 hop (Phase 15 must-fix ARCH-1).

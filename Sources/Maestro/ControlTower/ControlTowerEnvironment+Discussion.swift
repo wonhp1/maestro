@@ -36,6 +36,26 @@ extension ControlTowerEnvironment {
         )
     }
 
+    /// v0.5.4 — 디스크에서 로드한 record 를 보기용 viewModel 로 복원.
+    /// 복원된 토론은 "history-only" — 새 dispatch 는 기대 X. 사용자는 envelopes /
+    /// 결론 / 메타를 볼 수 있고 evict 로 삭제 가능.
+    func restoreDiscussionViewModel(
+        from record: DiscussionRecord
+    ) async -> DiscussionViewModel {
+        let dispatcher = NoopRestoreDispatcher()
+        let engine = DiscussionEngine(
+            discussion: record.discussion,
+            moderator: RoundRobinModerator(),
+            dispatcher: dispatcher,
+            initialPrompt: record.discussion.title
+        )
+        let viewModel = DiscussionViewModel(
+            discussion: record.discussion, engine: engine
+        )
+        viewModel.restoreEnvelopes(record.envelopes)
+        return viewModel
+    }
+
     /// "+ 새 토론" 시트의 backing viewModel — 현재 폴더 목록을 참가자 옵션으로,
     /// startAction 은 `startDiscussion` 으로 위임.
     public func makeDiscussionStartViewModel() -> DiscussionStartViewModel {
@@ -105,5 +125,18 @@ extension ControlTowerEnvironment {
         await discussionStore.register(viewModel: viewModel)
         try await engine.start()
         return threadId
+    }
+}
+
+/// v0.5.4 — 복원된 history-only 토론용 no-op dispatcher. 실제 호출 안 됨
+/// (engine.start 안 함, advance 트리거 X).
+private struct NoopRestoreDispatcher: DiscussionDispatching {
+    struct NotResumable: Error {}
+    func dispatchTurn(
+        discussion: Discussion,
+        speaker: AgentID,
+        prompt: String
+    ) async throws -> MessageEnvelope {
+        throw NotResumable()
     }
 }

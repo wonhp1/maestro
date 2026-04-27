@@ -77,6 +77,21 @@ public final class ChatViewModel {
         }
     }
 
+    /// v0.5.0 — 외부 호출자가 본문을 직접 send (e.g., 토론 결론 공유).
+    /// `draft` 를 잠시 빼앗았다 복구 — 사용자 타이핑 보존.
+    /// `isStreaming` 중이면 no-op (사용자가 명시적으로 cancel 후 재시도해야).
+    public func sendProgrammatic(_ body: String) {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isStreaming else { return }
+        let savedDraft = draft
+        draft = trimmed
+        send()
+        // send() 가 draft 를 비웠음. 사용자 입력 보존 — 비어있을 땐 굳이 set X.
+        if !savedDraft.isEmpty {
+            draft = savedDraft
+        }
+    }
+
     /// 진행 중인 스트림 취소. 동기적으로 isStreaming false / placeholder 무효화 →
     /// 즉시 다음 send 호출 가능 (Phase 8 must-fix race).
     public func cancel() {

@@ -25,6 +25,17 @@ extension ControlTowerEnvironment {
         )
     }
 
+    /// v0.5.0 — DiscussionViewModel 에 주입할 결론 공유기. ChatSessionStore 가
+    /// 자식 메인 세션에 typing.
+    func makeConclusionSharer(
+        folderViewModel: FolderViewModel
+    ) -> DiscussionConclusionSharing {
+        MaestroConclusionSharer(
+            chatSessionStore: chatSessionStore,
+            folderViewModel: folderViewModel
+        )
+    }
+
     /// "+ 새 토론" 시트의 backing viewModel — 현재 폴더 목록을 참가자 옵션으로,
     /// startAction 은 `startDiscussion` 으로 위임.
     public func makeDiscussionStartViewModel() -> DiscussionStartViewModel {

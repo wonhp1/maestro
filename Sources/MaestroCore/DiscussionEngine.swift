@@ -30,6 +30,9 @@ public actor DiscussionEngine {
         /// v0.5.0 — 결론이 set/update 됨. text 에 새 값 (사용자가 비워서 nil 로
         /// 만든 경우 빈 문자열). 사회자 자동 요약 + 사용자 편집 양쪽에서 발행.
         case conclusionUpdated(text: String)
+        /// v0.5.0 — 결론이 자식들에게 공유됨. 자식 메인 ChatViewModel 에 typing 한
+        /// 결과는 sharer 가 책임 — 이 이벤트는 영속화/UI 표시용 메타.
+        case sharedToTargets(targets: [AgentID], at: Date)
     }
 
     public enum TerminationReason: String, Sendable, Equatable {
@@ -133,6 +136,13 @@ public actor DiscussionEngine {
     public func setConclusion(_ text: String) {
         discussion.setConclusion(text)
         broadcast(.conclusionUpdated(text: text))
+    }
+
+    /// 공유 사실을 영속 메타에 기록. 실제 자식 메인 세션 typing 은 호출자
+    /// (`DiscussionConclusionSharing` production) 가 처리.
+    public func markShared(with targets: [AgentID], at time: Date) {
+        discussion.markShared(with: targets, at: time)
+        broadcast(.sharedToTargets(targets: targets, at: time))
     }
 
     /// 사용자 강제 종료. 진행 중 턴 결과는 무시.
@@ -429,4 +439,25 @@ public protocol DiscussionConclusionSummarizer: Sendable {
         discussion: Discussion,
         envelopes: [MessageEnvelope]
     ) async throws -> String
+}
+
+// MARK: - v0.5.0 — Conclusion sharing
+
+/// 결론을 자식 에이전트들의 **메인 세션** 에 typing — 자식이 결론을 컨텍스트로
+/// 기억하게 만든다. control-kim 의 ptyPool.write 흐름을 Maestro 의 ChatViewModel
+/// .send 로 매핑.
+///
+/// engine 은 이 protocol 만 의존 — 실제 자식 세션 lookup 은 production 구현
+/// (`MaestroConclusionSharer`) 의 책임.
+public protocol DiscussionConclusionSharing: Sendable {
+    /// targets 각각의 메인 세션에 결론 메시지를 typing.
+    /// - Parameters:
+    ///   - conclusion: 공유할 결론 (이미 사용자 편집 마침).
+    ///   - discussion: 컨텍스트 메타 (id/title 등) — sharer 가 메시지 prefix 에 사용.
+    ///   - targets: 공유할 자식 AgentID 목록 (보통 합성 ID `agent-{folder-uuid}`).
+    func share(
+        conclusion: String,
+        discussion: Discussion,
+        with targets: [AgentID]
+    ) async throws
 }

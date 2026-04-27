@@ -89,6 +89,8 @@ public final class DiscussionViewModel {
             self.currentSpeaker = nil
         case .conclusionUpdated:
             await refreshDiscussionSnapshot()
+        case .sharedToTargets:
+            await refreshDiscussionSnapshot()
         }
     }
 
@@ -147,5 +149,41 @@ public final class DiscussionViewModel {
     /// 사용자 직접 편집. 빈 문자열도 허용 (사용자가 결론을 지우고 싶을 수 있음).
     public func updateConclusion(_ text: String) async {
         await engine.setConclusion(text)
+    }
+
+    // MARK: - v0.5.0 — Conclusion sharing
+
+    /// 공유 진행 중 표시 — UI 가 ProgressView/buttons disable 에 사용.
+    public private(set) var isSharing: Bool = false
+
+    /// 결론을 자식 에이전트들의 메인 세션에 typing.
+    /// - Note: `discussion.conclusion` 이 비어있으면 lastError set 후 no-op.
+    public func shareConclusion(
+        with targets: [AgentID],
+        using sharer: DiscussionConclusionSharing
+    ) async {
+        guard !isSharing else { return }
+        let conclusion = (discussion.conclusion ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !conclusion.isEmpty else {
+            lastError = "결론이 비어있어 공유할 수 없어요."
+            return
+        }
+        guard !targets.isEmpty else {
+            lastError = "공유 대상이 비어있어요."
+            return
+        }
+        isSharing = true
+        defer { isSharing = false }
+        do {
+            try await sharer.share(
+                conclusion: conclusion,
+                discussion: discussion,
+                with: targets
+            )
+            await engine.markShared(with: targets, at: Date())
+        } catch {
+            lastError = "공유 실패: \(error.localizedDescription)"
+        }
     }
 }

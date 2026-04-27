@@ -151,7 +151,13 @@ struct ControlTowerView: View {
                 onInterrupt: nil,
                 summarizer: environment.folderViewModel.map { fvm in
                     environment.makeConclusionSummarizer(folderViewModel: fvm)
-                }
+                },
+                sharer: environment.folderViewModel.map { fvm in
+                    environment.makeConclusionSharer(folderViewModel: fvm)
+                },
+                agentDisplayResolver: environment.folderViewModel.map { fvm in
+                    fvm.displayName(for:)
+                } ?? { $0.rawValue }
             )
         } else {
             folderDetailContent

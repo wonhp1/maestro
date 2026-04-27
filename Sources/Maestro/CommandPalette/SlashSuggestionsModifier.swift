@@ -1,3 +1,4 @@
+import AppKit
 import MaestroCore
 import SwiftUI
 
@@ -32,6 +33,10 @@ struct SlashSuggestionsModifier: ViewModifier {
     /// applySelection 직후 draft 가 변경 → .task 재실행 → 새 popover 가 또 뜨는
     /// re-trigger 차단 (must-fix /team MED). 사용자가 다시 한 글자 타이핑할 때까지 latch.
     @State private var lastAppliedDraft: String = ""
+    /// v0.7.0 Phase 2 fix — TextEditor/TextField 가 화살표를 cursor 이동에 흡수해
+    /// SwiftUI .onKeyPress 까지 안 옴. NSEvent local monitor 로 popover 가 떴을 때만
+    /// 가로챔. dismiss 시 해제.
+    @State private var keyMonitor: KeyMonitorBox = KeyMonitorBox()
 
     /// pure logic — view rebuild 마다 새로 만들어도 비용 없음 (struct, no state).
     private let engine = SlashSuggestionEngine()
@@ -75,40 +80,75 @@ struct SlashSuggestionsModifier: ViewModifier {
                     )
                 }
             }
-            .onKeyPress(keys: [.upArrow]) { press in
-                handleNavigation(press: press, direction: -1)
-            }
-            .onKeyPress(keys: [.downArrow]) { press in
-                handleNavigation(press: press, direction: +1)
-            }
-            .onKeyPress(keys: [.return]) { press in
-                // must-fix /team HIGH-2 — modifier 없는 Enter 만 handle.
-                // Cmd+Enter (send), Shift+Enter (newline) 는 underlying view 에 전달.
-                guard press.modifiers.isEmpty,
-                      let suggestion,
-                      selectedIndex < suggestion.candidates.count else {
-                    return .ignored
+            .onChange(of: suggestion != nil) { _, isShown in
+                // popover 떴을 때만 NSEvent local monitor 활성. TextEditor/TextField 가
+                // 화살표 / Enter 를 흡수하기 전에 우리가 먼저 가로챔.
+                if isShown {
+                    installKeyMonitor()
+                } else {
+                    removeKeyMonitor()
                 }
-                applySelection(selected: suggestion.candidates[selectedIndex])
-                return .handled
             }
-            .onKeyPress(keys: [.escape]) { press in
-                guard press.modifiers.isEmpty, suggestion != nil else { return .ignored }
-                self.suggestion = nil
-                return .handled
-            }
+            .onDisappear { removeKeyMonitor() }
     }
 
-    private func handleNavigation(press: KeyPress, direction: Int) -> KeyPress.Result {
-        // modifier 없는 화살표만 — Shift+Up (selection 확장) 등 보존.
-        guard press.modifiers.isEmpty,
-              let suggestion,
-              !suggestion.candidates.isEmpty else {
-            return .ignored
+    // MARK: - NSEvent key monitor
+
+    private func installKeyMonitor() {
+        if keyMonitor.token != nil { return }
+        keyMonitor.token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKeyEvent(event) ? nil : event
         }
-        let count = suggestion.candidates.count
-        selectedIndex = (selectedIndex + direction + count) % count
-        return .handled
+    }
+
+    private func removeKeyMonitor() {
+        if let token = keyMonitor.token {
+            NSEvent.removeMonitor(token)
+            keyMonitor.token = nil
+        }
+    }
+
+    /// 반환 true = 우리가 처리, event swallow.
+    /// false = passthrough.
+    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        guard let suggestion, !suggestion.candidates.isEmpty else { return false }
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let cleanMods = mods.subtracting([.numericPad, .function])
+        switch event.keyCode {
+        case 126:  // Up arrow
+            guard cleanMods.isEmpty else { return false }
+            let count = suggestion.candidates.count
+            selectedIndex = (selectedIndex - 1 + count) % count
+            return true
+        case 125:  // Down arrow
+            guard cleanMods.isEmpty else { return false }
+            selectedIndex = (selectedIndex + 1) % suggestion.candidates.count
+            return true
+        case 36, 76:  // Return / Numpad Enter
+            // Cmd+Enter (send) 는 우리가 안 잡음 → underlying TextEditor 의 Cmd+Enter
+            // keyboardShortcut 으로 흐름.
+            guard cleanMods.isEmpty,
+                  selectedIndex < suggestion.candidates.count else {
+                return false
+            }
+            applySelection(selected: suggestion.candidates[selectedIndex])
+            return true
+        case 53:  // Esc
+            guard cleanMods.isEmpty else { return false }
+            self.suggestion = nil
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// NSEvent monitor token 을 @State 에 담기 위한 reference box.
+    /// SwiftUI struct 의 immutable self 안에서도 token 을 mutate 가능.
+    /// onDisappear 가 cleanup — deinit 은 Swift 6 nonisolated isolation 회피 위해 생략.
+    @MainActor
+    final class KeyMonitorBox {
+        var token: Any?
+        init() { self.token = nil }
     }
 
     private func applySelection(selected: DiscoveredSlashCommand) {

@@ -141,7 +141,8 @@ extension ControlTowerEnvironment {
         _ = await notificationService.requestAuthorization()
     }
 
-    /// 슬래시 명령 자동 탐색 wiring — `~/.claude/commands` + `~/.claude/skills`.
+    /// 슬래시 명령 자동 탐색 wiring — builtin (claude -p /help) + `~/.claude/commands` +
+    /// `~/.claude/skills`.
     func wireSlashCommands() async {
         let commandsDir = FileSlashCommandSource.defaultUserCommandsURL()
         let skillsDir = SkillSource.defaultUserSkillsURL()
@@ -153,18 +154,40 @@ extension ControlTowerEnvironment {
             SkillSource(directory: skillsDir),
             id: "skill"
         )
+        // v0.7.0 Phase 2 fix — builtin source 등록. claude binary 위치는 ClaudeAdapter
+        // 의 detect() 로 lazy 추출. 미설치면 prober 가 빈 결과 반환 (graceful).
+        let claudeAdapter = await adapterRegistry.adapter(for: ClaudeAdapter.id)
+        let claudePath = await (claudeAdapter as? ClaudeAdapter)?
+            .detect()
+            .executablePath
+        let cacheDir = (resolvedPaths?.root ?? FileManager.default.temporaryDirectory)
+        let cacheFile = cacheDir.appending(
+            path: "builtin-slash-cache.json", directoryHint: .notDirectory
+        )
+        await slashCommandRegistry.register(
+            BuiltinSlashCommandProber(
+                claudeExecutable: claudePath,
+                cacheFile: cacheFile,
+                executor: DefaultProcessExecutor(timeout: 10)
+            ),
+            id: "builtin"
+        )
         let watcher = SlashCommandWatcher(
             directories: [commandsDir, skillsDir],
             registry: slashCommandRegistry
         )
         await watcher.start()
         self.slashCommandWatcher = watcher
+        // v0.7.0 Phase 2 fix — 옛 `<arg-hint>` literal 박는 패턴 제거.
+        // SlashSuggestionEngine.applySelection 과 동일 정책: 인수 없으면 `/foo`,
+        // 있으면 trailing space 만 (`/foo `). 사용자가 자유롭게 인수 타이핑.
         let provider = SlashCommandPaletteProvider(
             registry: slashCommandRegistry,
             onSelect: { [weak self] discovered in
                 guard let self else { return }
-                let argHint = discovered.command.arguments?.first.map { " <\($0)>" } ?? ""
-                self.pendingSlashInsertion = "/\(discovered.command.name)\(argHint)"
+                let hasArgs = (discovered.command.arguments?.isEmpty == false)
+                let suffix = hasArgs ? " " : ""
+                self.pendingSlashInsertion = "/\(discovered.command.name)\(suffix)"
             }
         )
         await commandRegistry.register(provider, id: "slash")

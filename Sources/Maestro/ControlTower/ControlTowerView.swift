@@ -18,6 +18,9 @@ struct ControlTowerView: View {
     @State private var dockBadgeUpdater: DockBadgeUpdater?
     @State private var onboardingViewModel: OnboardingViewModel?
     @State private var showFeedbackSheet: Bool = false
+    /// v0.5.1 — 토론 메모 관리 시트.
+    @State private var showMemosSheet: Bool = false
+    @State private var memoViewModel: AgentMemoViewModel?
 
     var body: some View {
         NavigationSplitView {
@@ -130,6 +133,11 @@ struct ControlTowerView: View {
         .sheet(isPresented: $showFeedbackSheet) {
             FeedbackSheetView(detectedAdapters: environment.detectedAdapterIDs)
         }
+        .modifier(MemoSheetModifier(
+            environment: environment,
+            showSheet: $showMemosSheet,
+            viewModel: $memoViewModel
+        ))
         .onAppear {
             environment.menuActionRouter.onOpenHelp = { @MainActor in
                 if let url = URL(string: "https://github.com/wonhp1/maestro/issues") {
@@ -440,37 +448,8 @@ public final class ControlTowerEnvironment {
         })
     }
 
-    /// Control 폴더 + adapterId == "claude" → 동적 system prompt 주입된 ClaudeAdapter.
-    /// 사용자가 control 폴더 어댑터를 다른 vendor 로 변경한 경우 일반 selector 경로로
-    /// 폴백 — system prompt 자동 주입은 Claude 전용 (Phase v0.4.6 한계).
-    /// I-NEW-2 — folder 에 영속된 sessionId 를 어댑터에 전달해 prior 대화 재개.
-    private static func makeChatViewModelFactory(
-        selector: AdapterSelector,
-        controlClaudeAdapter: ClaudeAdapter?
-    ) -> @MainActor (FolderRegistration) async throws -> ChatViewModel {
-        return { folder in
-            if ControlAgentProvisioner.isControlFolder(folder.id),
-               folder.adapterId.rawValue == "claude",
-               let ctrl = controlClaudeAdapter {
-                let session = try await ctrl.createSession(
-                    folderPath: folder.path,
-                    preferredSessionId: folder.sessionId,
-                    modelId: folder.modelId
-                )
-                return try ChatViewModel(adapter: ctrl, session: session)
-            }
-            let adapter = await selector.select(
-                preferred: folder.adapterId.rawValue,
-                enabled: ["claude", "aider"]
-            )
-            let session = try await adapter.createSession(
-                folderPath: folder.path,
-                preferredSessionId: folder.sessionId,
-                modelId: folder.modelId
-            )
-            return try ChatViewModel(adapter: adapter, session: session)
-        }
-    }
+    // makeChatViewModelFactory 는 ControlTowerEnvironment+ChatFactory.swift 로
+    // 분리 (file_length).
 
     /// UI 의 "보내기" 액션을 DispatchService 로 전달.
     /// dispatch 시작 전에 ChatSessionStore 가 해당 폴더의 세션을 ensure 함 — 첫 dispatch 도 동작.

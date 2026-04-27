@@ -306,33 +306,9 @@ public protocol DiscussionDispatching: Sendable {
     ) async throws -> MessageEnvelope
 }
 
-/// production wrapper — DispatchService 를 호출.
-public struct DispatchServiceTurnDispatcher: DiscussionDispatching {
-    private let service: DispatchService
-    private let from: AgentID
-
-    public init(service: DispatchService, from: AgentID) {
-        self.service = service
-        self.from = from
-    }
-
-    public func dispatchTurn(
-        discussion: Discussion,
-        speaker: AgentID,
-        prompt: String
-    ) async throws -> MessageEnvelope {
-        guard let reply = try await service.dispatch(
-            from: from,
-            to: speaker,
-            body: prompt,
-            expectReply: true,
-            thread: discussion.id
-        ) else {
-            throw DiscussionEngineError.noReply(speaker: speaker)
-        }
-        return reply
-    }
-}
+// v0.5.1 — DispatchServiceTurnDispatcher 제거됨. v0.5.0 부터 IsolatedTurnDispatcher
+// 가 production 경로 — 자식 메인 세션 오염 방지를 위해 ephemeral subSession 사용.
+// DispatchService 는 컨트롤 타워의 일반 chat dispatch 에서만 사용 (토론 외).
 
 public enum DiscussionEngineError: Error, Equatable, Sendable {
     case noReply(speaker: AgentID)

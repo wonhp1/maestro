@@ -33,6 +33,10 @@ public actor AiderAdapter: AgentAdapter {
     /// session id → chat history 파일 경로 (Aider --chat-history-file 인자).
     private var chatHistoryPaths: [SessionID: URL] = [:]
     private var cachedDetection: AdapterDetection?
+    /// v0.6.0 — 응답에서 capture 한 마지막 모델 ID (예: "gpt-4o", "claude-sonnet-4-5").
+    /// stdout 의 `Main model: <id>` 라인에서 추출. 사용자가 명시적 modelId 안 줬을
+    /// 때 UI 가 실제 동작 모델 표시.
+    private var lastSeenModelBySession: [SessionID: String] = [:]
 
     public init(
         executor: any ProcessExecuting = DefaultProcessExecutor(timeout: 600),
@@ -65,7 +69,18 @@ public actor AiderAdapter: AgentAdapter {
     }
 
     public func createSession(folderPath: URL) async throws -> Session {
-        let sessionId = SessionID.new()
+        try await createSession(
+            folderPath: folderPath, preferredSessionId: nil, modelId: nil
+        )
+    }
+
+    /// v0.6.0 — modelId 가 주어지면 session.modelId 에 저장 → buildArguments 가
+    /// `--model <id>` flag 추가. preferredSessionId 는 Aider 가 native session ID
+    /// 미지원이라 무시 (chat history 파일이 사실상 session 식별자).
+    public func createSession(
+        folderPath: URL, preferredSessionId: SessionID?, modelId: String?
+    ) async throws -> Session {
+        let sessionId = preferredSessionId ?? SessionID.new()
         let resolved = folderPath.resolvingSymlinksInPath()
         let now = Date()
         let session = Session(
@@ -75,7 +90,8 @@ public actor AiderAdapter: AgentAdapter {
             folderPath: resolved,
             createdAt: now,
             lastActivityAt: now,
-            status: .active
+            status: .active,
+            modelId: modelId
         )
         // 세션별 history 파일 생성 — AppSupport/aider/sessions/<id>.md
         try FileManager.default.createDirectory(
@@ -105,7 +121,33 @@ public actor AiderAdapter: AgentAdapter {
         }
         // history 파일은 보존 — 사용자가 외부에서 `aider --chat-history-file ...` 으로 재개 가능.
         chatHistoryPaths.removeValue(forKey: id)
+        lastSeenModelBySession.removeValue(forKey: id)
         logger.info("destroySession id=\(id.rawValue)")
+    }
+
+    /// v0.6.0 — Aider 가 흔히 쓰는 stable alias. full version 은 응답에서 capture.
+    /// LiteLLM (Aider 의 backend) 가 인식하는 prefix-based 식별자. 사용자 환경에서
+    /// 어떤 게 작동할지는 API key 보유 여부에 의존 — 어댑터는 list 만 제공.
+    public func availableModels() async -> [String] {
+        [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "claude-sonnet-4-5",
+            "claude-opus-4-1",
+            "claude-haiku-4-5",
+            "deepseek-coder",
+            "gemini/gemini-2.0-flash",
+        ]
+    }
+
+    /// v0.6.0 — 우선순위:
+    /// 1. 응답에서 capture 한 lastSeen (가장 정확 — 실제 LiteLLM 이 매핑한 model)
+    /// 2. 사용자 지정 session.modelId (응답 받기 전 fallback)
+    /// 3. nil — UI 가 "감지 중…"
+    public func resolvedModel(for session: Session) async -> String? {
+        if let lastSeen = lastSeenModelBySession[session.id] { return lastSeen }
+        if let explicit = session.modelId, !explicit.isEmpty { return explicit }
+        return nil
     }
 
     public func sendMessage(
@@ -132,6 +174,10 @@ public actor AiderAdapter: AgentAdapter {
         }
         if let knownError = AiderOutputParser.detectKnownError(in: output.stdout) {
             throw AdapterError.processFailed(exitCode: 0, stderr: "aider error: \(knownError)")
+        }
+        // v0.6.0 — `Main model: <id>` 라인에서 model capture.
+        if let model = AiderModelExtractor.extractFromStdout(output.stdout) {
+            lastSeenModelBySession[session.id] = model
         }
         let text = AiderOutputParser.extractAssistantResponse(from: output.stdout)
         return MessageEnvelope.report(from: envelope.to, inReplyTo: envelope, body: text)
@@ -177,6 +223,11 @@ public actor AiderAdapter: AgentAdapter {
         var state = StreamState()
         for try await event in stream {
             try handleStreamEvent(event, state: &state, continuation: continuation)
+        }
+        // v0.6.0 — stream 종료 후 누적 stdout 에서 model capture (state.allStdout 가
+        // 1MiB cap 내에서 header 라인 포함 보존).
+        if let model = AiderModelExtractor.extractFromStdout(state.allStdout) {
+            lastSeenModelBySession[session.id] = model
         }
     }
 
@@ -282,6 +333,11 @@ public actor AiderAdapter: AgentAdapter {
             args.append("--no-stream")
         }
         args.append(contentsOf: ["--chat-history-file", historyPath])
+        // v0.6.0 — 사용자가 폴더 설정에서 모델 명시 시 `--model <id>` flag.
+        // 빈 값/nil 이면 Aider 가 환경변수/config 로 결정 (기본).
+        if let modelId = session.modelId, !modelId.isEmpty {
+            args.append(contentsOf: ["--model", modelId])
+        }
         return args
     }
 

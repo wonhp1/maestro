@@ -238,6 +238,59 @@ final class AiderAdapterTests: XCTestCase {
         XCTAssertFalse(AiderAdapter.iconName.isEmpty)
     }
 
+    // MARK: - v0.6.0 Phase 1 — Model reporting
+
+    func testAvailableModelsReturnsStableAliases() async throws {
+        let adapter = try makeAdapter()
+        let models = await adapter.availableModels()
+        XCTAssertFalse(models.isEmpty, "Aider 어댑터는 alias 리스트 보고")
+        // 정확한 리스트는 어댑터 결정 — 핵심 alias 만 확인.
+        XCTAssertTrue(models.contains("gpt-4o"))
+    }
+
+    func testResolvedModelExplicitWhenSet() async throws {
+        let adapter = try makeAdapter()
+        let session = try await adapter.createSession(
+            folderPath: tempDir,
+            preferredSessionId: nil,
+            modelId: "deepseek-coder"
+        )
+        let resolved = await adapter.resolvedModel(for: session)
+        XCTAssertEqual(resolved, "deepseek-coder")
+    }
+
+    func testResolvedModelCapturesFromMainModelLine() async throws {
+        let exec = ArgRecordingExecutor(stdout: aiderStdout(answer: "hi"))
+        let adapter = try makeAdapter(executor: exec)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        // 응답 전엔 nil
+        let before = await adapter.resolvedModel(for: session)
+        XCTAssertNil(before)
+        _ = try await adapter.sendMessage(makeEnvelope(body: "hi"), in: session)
+        // aiderStdout 의 "Main model: claude-sonnet-4-5" 가 capture 됨
+        let after = await adapter.resolvedModel(for: session)
+        XCTAssertEqual(after, "claude-sonnet-4-5")
+    }
+
+    /// /team review LOW concern — destroy → recreate 시 캐시가 정확히 비워지는지.
+    func testDestroyClearsLastSeenModelCache() async throws {
+        let exec = ArgRecordingExecutor(stdout: aiderStdout(answer: "hi"))
+        let adapter = try makeAdapter(executor: exec)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        _ = try await adapter.sendMessage(makeEnvelope(body: "hi"), in: session)
+        let captured = await adapter.resolvedModel(for: session)
+        XCTAssertEqual(captured, "claude-sonnet-4-5")
+        try await adapter.destroySession(session.id)
+        // 같은 SessionID 로 (preferredSessionId) 재생성 시 캐시 잔존 X
+        let session2 = try await adapter.createSession(
+            folderPath: tempDir,
+            preferredSessionId: session.id,
+            modelId: nil
+        )
+        let resolved = await adapter.resolvedModel(for: session2)
+        XCTAssertNil(resolved, "destroy 후 lastSeen 캐시 비워짐")
+    }
+
     // MARK: - Helpers
 
     private func makeAdapter(

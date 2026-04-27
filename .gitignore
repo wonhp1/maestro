@@ -89,3 +89,8 @@ EXPORT_OPTIONS.plist
 *.crt
 secrets.json
 credentials.json
+
+# 보안 — 추가 인증서/키체인 패턴 (보안 audit 결과 보강)
+*.pfx
+*.keychain
+*.keychain-db

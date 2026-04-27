@@ -24,6 +24,23 @@ public enum ClaudeStreamParser {
         return model
     }
 
+    /// v0.7.0 Phase 3 — 한 라인이 `system.init` 라면 SDK 환경에서 동작 가능한
+    /// 슬래시 명령 list 추출. Claude SDK 가 어떤 builtin 을 받는지 정확히 알려줌.
+    /// 결과: `["compact", "usage", "model", ...]` (선두 `/` 제외).
+    /// `slash_commands` 필드 없으면 nil.
+    public static func extractSlashCommands(from line: String) -> [String]? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String, type == "system",
+              let subtype = json["subtype"] as? String, subtype == "init",
+              let commands = json["slash_commands"] as? [String]
+        else { return nil }
+        // 선두 `/` 떼기 — DiscoveredSlashCommand.name 은 prefix 없는 형식.
+        return commands.map { name in
+            name.hasPrefix("/") ? String(name.dropFirst()) : name
+        }
+    }
+
     /// 한 라인을 0개 이상의 `ResponseChunk` 로 변환.
     /// 디코드 실패 라인은 빈 배열 (silent — 호출자가 판단).
     public static func parse(line: String) -> [ResponseChunk] {

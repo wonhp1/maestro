@@ -130,4 +130,53 @@ final class ClaudeStreamParserTests: XCTestCase {
         """#
         XCTAssertNil(ClaudeStreamParser.extractModel(from: line))
     }
+
+    // MARK: - v0.7.0 Phase 3 — extractSlashCommands
+
+    func testExtractSlashCommandsFromSystemInit() {
+        let line = #"""
+        {"type":"system","subtype":"init","slash_commands":["/compact","/usage","/model"]}
+        """#
+        XCTAssertEqual(
+            ClaudeStreamParser.extractSlashCommands(from: line),
+            ["compact", "usage", "model"]
+        )
+    }
+
+    func testExtractSlashCommandsHandlesNoLeadingSlash() {
+        // Anthropic 이 어느 날 / 없는 형식으로 보내도 graceful 처리.
+        let line = #"""
+        {"type":"system","subtype":"init","slash_commands":["compact","usage"]}
+        """#
+        XCTAssertEqual(
+            ClaudeStreamParser.extractSlashCommands(from: line),
+            ["compact", "usage"]
+        )
+    }
+
+    func testExtractSlashCommandsReturnsNilWhenFieldMissing() {
+        let line = #"""
+        {"type":"system","subtype":"init","model":"claude"}
+        """#
+        XCTAssertNil(ClaudeStreamParser.extractSlashCommands(from: line))
+    }
+
+    func testExtractSlashCommandsReturnsNilForNonInit() {
+        let line = #"""
+        {"type":"assistant","message":{"content":[]}}
+        """#
+        XCTAssertNil(ClaudeStreamParser.extractSlashCommands(from: line))
+    }
+
+    func testExtractSlashCommandsReturnsEmptyArrayWhenSDKReturnsEmpty() {
+        // Claude 가 빈 배열을 명시적으로 보낼 가능성 (defensive).
+        let line = #"""
+        {"type":"system","subtype":"init","slash_commands":[]}
+        """#
+        XCTAssertEqual(ClaudeStreamParser.extractSlashCommands(from: line), [])
+    }
+
+    func testExtractSlashCommandsIgnoresInvalidJSON() {
+        XCTAssertNil(ClaudeStreamParser.extractSlashCommands(from: "not json"))
+    }
 }

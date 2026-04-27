@@ -154,12 +154,17 @@ extension ControlTowerEnvironment {
             SkillSource(directory: skillsDir),
             id: "skill"
         )
-        // v0.7.0 Phase 2 fix-2 — BuiltinSlashCommandProber 등록 제거.
-        // 사용자 보고: "/help isn't available in this environment" — Claude SDK
-        // (claude -p) 모드는 TUI-only 슬래시 명령 (/help, /clear 등) 거부.
-        // popover 에 보여도 dispatch 실패 → false advertising. 사용자 정의
-        // (~/.claude/commands/*.md) 와 skill 만 노출. SDK-supported 명령 fetch
-        // 인프라 생기면 (Anthropic API) 재도입 검토.
+        // v0.7.0 Phase 3 — AdapterSlashCommandSource 등록.
+        // ClaudeAdapter 가 dispatch 응답의 system.init.slash_commands 에서 SDK 환경
+        // 동작 가능 builtin 을 capture (background). source 가 매 호출 시 fresh
+        // snapshot 받아 popover 에 노출. 첫 dispatch 전엔 빈 배열 → popover 에 안
+        // 보임 (cold start trade-off — 첫 메시지 후 builtin 자동 추가).
+        if let claude = await adapterRegistry.adapter(for: ClaudeAdapter.id) {
+            await slashCommandRegistry.register(
+                AdapterSlashCommandSource(adapter: claude),
+                id: "adapter-builtin-claude"
+            )
+        }
         let watcher = SlashCommandWatcher(
             directories: [commandsDir, skillsDir],
             registry: slashCommandRegistry

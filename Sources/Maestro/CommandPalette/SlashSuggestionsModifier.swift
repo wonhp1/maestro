@@ -52,7 +52,10 @@ struct SlashSuggestionsModifier: ViewModifier {
                 // captured draft (must-fix /team HIGH-1) — snapshot await 중 draft 변하면
                 // 다음 task 가 cancel 시켜야 정확. 여기서 한 번 더 snapshot.
                 let captured = draft
-                snapshot = await registry.snapshot()
+                // v0.7.0 Phase 3 — refresh() 로 매번 fresh (snapshot() 의 actor cache
+                // 우회). ClaudeAdapter 가 dispatch 응답에서 capture 한 builtin 이
+                // 첫 메시지 직후부터 popover 에 노출되게 함.
+                snapshot = await registry.refresh()
                 guard !Task.isCancelled else { return }
                 // captured 와 현재 draft 가 다르면 더 최신 task 가 진행 중 — 이 결과 버림.
                 guard captured == draft else { return }

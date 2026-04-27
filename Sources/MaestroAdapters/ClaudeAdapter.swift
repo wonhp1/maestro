@@ -51,6 +51,12 @@ public actor ClaudeAdapter: AgentAdapter {
     /// 사용자가 명시적 modelId 안 줬을 때 UI 가 실제 동작 모델을 표시하기 위함.
     /// 세션별로 추적 — 세션마다 다른 모델일 수 있음.
     private var lastSeenModelBySession: [SessionID: String] = [:]
+    /// v0.7.0 Phase 3 — `system.init.slash_commands` 에서 capture 한 SDK 환경
+    /// 동작 가능 builtin 슬래시 명령 list. Claude SDK 가 어떤 builtin 받는지 정확.
+    /// 어댑터 전역 (per-session dict 불요 — Maestro UI 가 폴더 무관하게 popover 노출).
+    /// dispatch 1회 후부터 채워짐. destroySession 후에도 보존 — 다음 세션의 cold
+    /// start 안 시킴 (어차피 동일 Claude SDK 라 list 같음).
+    private var anySessionSlashCommands: [String] = []
 
     public init(
         executor: any ProcessExecuting = DefaultProcessExecutor(timeout: 600),
@@ -233,6 +239,12 @@ public actor ClaudeAdapter: AgentAdapter {
         return ClaudeSlashCommands.builtIns + user + project
     }
 
+    /// v0.7.0 Phase 3 — `system.init.slash_commands` 에서 capture 한 SDK 환경
+    /// 동작 가능 builtin list. Maestro UI popover 가 호출.
+    public func capturedSlashCommands() async -> [String] {
+        anySessionSlashCommands
+    }
+
     // MARK: - Internals
 
     /// streaming 본문 — sendMessage 와 비슷하나 stream-json 라인 별 ResponseChunk 변환.
@@ -268,6 +280,11 @@ public actor ClaudeAdapter: AgentAdapter {
                 // 명시 안 했을 때 UI 가 정확한 default 표시 가능).
                 if let model = ClaudeStreamParser.extractModel(from: line) {
                     lastSeenModelBySession[session.id] = model
+                }
+                // v0.7.0 Phase 3 — system.init.slash_commands capture.
+                // SDK 환경에서 동작 가능한 builtin 정확한 list.
+                if let cmds = ClaudeStreamParser.extractSlashCommands(from: line) {
+                    anySessionSlashCommands = cmds
                 }
                 for chunk in ClaudeStreamParser.parse(line: line) {
                     continuation.yield(chunk)

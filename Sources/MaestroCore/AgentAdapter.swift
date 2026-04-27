@@ -79,6 +79,12 @@ public protocol AgentAdapter: Sendable {
     /// 4. 모를 때 nil — UI 가 "감지 중…" 표시.
     /// 기본 구현은 session.modelId 그대로 반환 (mock/aider 호환).
     func resolvedModel(for session: Session) async -> String?
+
+    /// v0.7.0 Phase 3 — 어댑터가 dispatch 응답에서 capture 한 SDK 환경 동작
+    /// 가능 builtin 슬래시 명령 list. UI popover 가 사용자 정의 + skill 옆에
+    /// 자연스럽게 노출. 첫 dispatch 전엔 빈 배열.
+    /// 기본 구현은 빈 배열 — Claude / Aider / 기타 어댑터별 override.
+    func capturedSlashCommands() async -> [String]
 }
 
 // MARK: - Default implementations
@@ -134,6 +140,9 @@ public extension AgentAdapter {
 
     /// v0.5.5 — 기본 구현은 빈 배열. ClaudeAdapter / AiderAdapter 가 override.
     func availableModels() async -> [String] { [] }
+
+    /// v0.7.0 Phase 3 — 기본 구현은 빈 배열. ClaudeAdapter override.
+    func capturedSlashCommands() async -> [String] { [] }
 
     /// 기본 아이콘 — 미설정 어댑터용 fallback.
     static var iconName: String { "terminal" }

@@ -26,6 +26,9 @@ public final class ChatViewModel {
     public private(set) var isStreaming: Bool = false
     /// 직전 스트림이 *실패* 했을 때의 사용자 메시지. 사용자 취소는 lastError 에 안 잡힘.
     public private(set) var lastError: String?
+    /// v0.5.2 — 어댑터가 보고한 현재 사용 중 모델 ID (예: "claude-sonnet-4-5").
+    /// 응답마다 갱신. nil 이면 어댑터가 모름 (응답 1회 전 또는 미지원 어댑터).
+    public private(set) var currentModel: String?
 
     /// Phase 13 — DispatchService 가 adapter/session 회수 필요.
     /// nonisolated read 안전 (immutable + Sendable AgentAdapter / Session).
@@ -47,6 +50,9 @@ public final class ChatViewModel {
         self.session = session
         self.userAgentId = try AgentID.validated(rawValue: "user")
         self.assistantAgentId = session.agentId
+        // v0.5.2 — session.modelId 가 명시돼 있으면 즉시 표시. 그 외엔 첫 응답
+        // 후 refreshCurrentModel() 가 어댑터로부터 capture.
+        self.currentModel = session.modelId
     }
 
     /// v0.4.8 memory-reviewer 권고 — `onAssistantResponseComplete` 가 외부에서 set 된
@@ -109,6 +115,15 @@ public final class ChatViewModel {
         lastError = nil
     }
 
+    /// v0.5.2 — 어댑터에 현재 사용 중 모델을 물어 currentModel 갱신.
+    /// 응답 후 자동 호출. UI 가 직접 호출 가능 (예: 화면 복귀 시 refresh).
+    public func refreshCurrentModel() async {
+        let resolved = await adapter.resolvedModel(for: session)
+        if resolved != currentModel {
+            currentModel = resolved
+        }
+    }
+
     /// 부모 (control 등) 의 ChatView 에 자식 RELAY 응답 한 건을 follow-up assistant
     /// 메시지로 append. v0.4.6 멀티턴 루프.
     /// - Parameters:
@@ -161,6 +176,8 @@ public final class ChatViewModel {
             // 정상 종료 — placeholder 가 여전히 활성일 때만 .complete.
             if activePlaceholderID == placeholderID {
                 updateStatus(of: placeholderID, to: .complete)
+                // v0.5.2 — 응답 후 어댑터가 capture 한 실제 모델 갱신.
+                await refreshCurrentModel()
                 // I-03 fix — 완성된 본문에서 RELAY_TO 처리할 수 있게 외부 hook 호출.
                 if let callback = onAssistantResponseComplete,
                    let idx = messages.firstIndex(where: { $0.id == placeholderID }) {

@@ -27,6 +27,10 @@ public struct ClaudeJSONResult: Codable, Hashable, Sendable {
     public let sessionId: String?
     public let stopReason: String?
     public let durationMs: Int?
+    /// v0.5.2 — Claude 가 실제로 사용한 모델 (예: `claude-sonnet-4-5-20250929`).
+    /// 사용자가 `--model` 미지정 시에도 CLI default 가 무엇인지 알 수 있게 됨.
+    /// 옛 응답 (필드 부재) 디코딩 시 nil — Codable 자동 처리.
+    public let model: String?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -36,6 +40,7 @@ public struct ClaudeJSONResult: Codable, Hashable, Sendable {
         case sessionId = "session_id"
         case stopReason = "stop_reason"
         case durationMs = "duration_ms"
+        case model
     }
 
     public init(
@@ -45,7 +50,8 @@ public struct ClaudeJSONResult: Codable, Hashable, Sendable {
         result: String?,
         sessionId: String?,
         stopReason: String?,
-        durationMs: Int?
+        durationMs: Int?,
+        model: String? = nil
     ) {
         self.type = type
         self.subtype = subtype
@@ -54,6 +60,7 @@ public struct ClaudeJSONResult: Codable, Hashable, Sendable {
         self.sessionId = sessionId
         self.stopReason = stopReason
         self.durationMs = durationMs
+        self.model = model
     }
 }
 

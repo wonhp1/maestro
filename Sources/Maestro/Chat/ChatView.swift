@@ -21,6 +21,9 @@ public struct ChatView: View {
             errorBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // v0.5.2 — view 진입 시 어댑터에 현재 모델 한 번 물어봄. 응답 1회 받은
+        // 어댑터는 즉시 정확한 라벨 (예: "claude-sonnet-4-5") 반환.
+        .task { await viewModel.refreshCurrentModel() }
     }
 
     /// v0.5.1 — 어댑터 + 모델 표시 헤더.
@@ -45,17 +48,26 @@ public struct ChatView: View {
     }
 
     private var modelLabel: String {
-        let raw = viewModel.session.modelId ?? ""
-        if raw.isEmpty { return "기본 모델" }
-        // 사용자 친화 라벨: "claude-sonnet-4-5" → "Sonnet 4.5"
-        return Self.prettyClaudeModel(raw)
+        // v0.5.2 — currentModel 우선 (어댑터가 응답에서 capture).
+        // 없으면 session.modelId. 둘 다 없으면 "감지 중…" (응답 한 번도 안 받음).
+        let raw = viewModel.currentModel ?? viewModel.session.modelId ?? ""
+        if raw.isEmpty { return "감지 중…" }
+        return Self.prettyModel(raw)
     }
 
-    static func prettyClaudeModel(_ id: String) -> String {
+    /// 사용자 친화 라벨: "claude-sonnet-4-5-20250929" → "Sonnet 4.5". 알 수 없는
+    /// 모델은 raw 그대로 (예: "gpt-4o", "deepseek-chat").
+    static func prettyModel(_ id: String) -> String {
         let lower = id.lowercased()
-        if lower.contains("sonnet") { return id.contains("4-5") ? "Sonnet 4.5" : "Sonnet" }
-        if lower.contains("opus") { return id.contains("4-1") ? "Opus 4.1" : "Opus" }
-        if lower.contains("haiku") { return id.contains("4-5") ? "Haiku 4.5" : "Haiku" }
+        if lower.contains("sonnet") {
+            return lower.contains("4-5") ? "Sonnet 4.5" : "Sonnet"
+        }
+        if lower.contains("opus") {
+            return lower.contains("4-1") ? "Opus 4.1" : "Opus"
+        }
+        if lower.contains("haiku") {
+            return lower.contains("4-5") ? "Haiku 4.5" : "Haiku"
+        }
         return id
     }
 

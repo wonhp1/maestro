@@ -104,4 +104,30 @@ final class ClaudeStreamParserTests: XCTestCase {
     }
 
     // extractFinalResultText: simplify 단계에서 미사용으로 제거됨.
+
+    // MARK: - v0.5.2 — extractModel
+
+    func testExtractModelFromSystemInit() {
+        let line = #"""
+        {"type":"system","subtype":"init","model":"claude-sonnet-4-5-20250929","session_id":"abc"}
+        """#
+        XCTAssertEqual(
+            ClaudeStreamParser.extractModel(from: line),
+            "claude-sonnet-4-5-20250929"
+        )
+    }
+
+    func testExtractModelReturnsNilForNonInit() {
+        let line = #"""
+        {"type":"assistant","message":{"content":[]}}
+        """#
+        XCTAssertNil(ClaudeStreamParser.extractModel(from: line))
+    }
+
+    func testExtractModelReturnsNilForEmptyModel() {
+        let line = #"""
+        {"type":"system","subtype":"init","model":""}
+        """#
+        XCTAssertNil(ClaudeStreamParser.extractModel(from: line))
+    }
 }

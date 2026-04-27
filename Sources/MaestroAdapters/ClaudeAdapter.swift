@@ -47,6 +47,10 @@ public actor ClaudeAdapter: AgentAdapter {
     /// detect() 결과 캐시 — sendMessage 마다 spawn 비용 제거 (Phase 7 perf must-fix).
     /// processFailed 시 invalidate.
     private var cachedDetection: AdapterDetection?
+    /// v0.5.2 — 응답에서 capture 한 마지막 모델 ID (예: "claude-sonnet-4-5-20250929").
+    /// 사용자가 명시적 modelId 안 줬을 때 UI 가 실제 동작 모델을 표시하기 위함.
+    /// 세션별로 추적 — 세션마다 다른 모델일 수 있음.
+    private var lastSeenModelBySession: [SessionID: String] = [:]
 
     public init(
         executor: any ProcessExecuting = DefaultProcessExecutor(timeout: 600),
@@ -143,7 +147,15 @@ public actor ClaudeAdapter: AgentAdapter {
             throw AdapterError.unknownSession(id: id)
         }
         initializedSessions.remove(id)
+        lastSeenModelBySession[id] = nil
         logger.info("destroySession id=\(id.rawValue)")
+    }
+
+    /// v0.5.2 — 우선순위: 사용자 지정 modelId → 응답에서 capture 한 last seen.
+    /// 응답 한 번도 안 받았고 사용자가 modelId 지정 안 했으면 nil → UI 가 "감지 중…".
+    public func resolvedModel(for session: Session) async -> String? {
+        if let explicit = session.modelId, !explicit.isEmpty { return explicit }
+        return lastSeenModelBySession[session.id]
     }
 
     public func sendMessage(
@@ -176,6 +188,11 @@ public actor ClaudeAdapter: AgentAdapter {
         let parsed = try ClaudeJSONResult.decode(from: output.stdout)
         let text = try parsed.validatedResultText()
         initializedSessions.insert(session.id)
+        // v0.5.2 — 응답의 model 필드 capture → resolvedModel 이 실제 사용 중인 모델
+        // (사용자가 명시 안 했더라도) 표시 가능.
+        if let model = parsed.model, !model.isEmpty {
+            lastSeenModelBySession[session.id] = model
+        }
         return MessageEnvelope.report(from: envelope.to, inReplyTo: envelope, body: text)
     }
 
@@ -234,6 +251,11 @@ public actor ClaudeAdapter: AgentAdapter {
                     // Phase 7 must-fix: 첫 stdout 도착 = Claude 가 세션 파일 작성 시작 시점
                     // → cancel/error 시점에도 다음 호출은 --resume 으로 가야 함.
                     initializedSessions.insert(session.id)
+                }
+                // v0.5.2 — system.init 라인에서 model capture (사용자가 modelId
+                // 명시 안 했을 때 UI 가 정확한 default 표시 가능).
+                if let model = ClaudeStreamParser.extractModel(from: line) {
+                    lastSeenModelBySession[session.id] = model
                 }
                 for chunk in ClaudeStreamParser.parse(line: line) {
                     continuation.yield(chunk)

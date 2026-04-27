@@ -260,6 +260,32 @@ final class ClaudeAdapterTests: XCTestCase {
         XCTAssertTrue(calls[0].arguments.contains("claude-opus-4-1"))
     }
 
+    func testResolvedModelReturnsExplicitWhenSet() async throws {
+        let adapter = try makeAdapter()
+        let session = try await adapter.createSession(
+            folderPath: tempHome,
+            preferredSessionId: nil,
+            modelId: "claude-opus-4-1"
+        )
+        let resolved = await adapter.resolvedModel(for: session)
+        XCTAssertEqual(resolved, "claude-opus-4-1")
+    }
+
+    func testResolvedModelCapturesFromResponseWhenNotExplicit() async throws {
+        let exec = RecordingExecutor(
+            stdout: jsonResultRawWithModel(text: "ok", model: "claude-sonnet-4-5-20250929")
+        )
+        let adapter = try makeAdapter(executor: exec, executableExists: true)
+        let session = try await adapter.createSession(folderPath: tempHome)
+        // 응답 전엔 nil
+        let before = await adapter.resolvedModel(for: session)
+        XCTAssertNil(before)
+        _ = try await adapter.sendMessage(makeTaskEnvelope(body: "hi"), in: session)
+        // 응답 후 capture 됨
+        let after = await adapter.resolvedModel(for: session)
+        XCTAssertEqual(after, "claude-sonnet-4-5-20250929")
+    }
+
     func testNilModelIdOmitsFlag() async throws {
         let exec = RecordingExecutor(stdout: jsonResultRaw(text: "ok"))
         let adapter = try makeAdapter(executor: exec, executableExists: true)
@@ -319,6 +345,12 @@ final class ClaudeAdapterTests: XCTestCase {
     private func jsonResultRaw(text: String) -> String {
         #"""
         {"type":"result","subtype":"success","is_error":false,"result":"\#(text)","session_id":"abc","stop_reason":"end_turn"}
+        """#
+    }
+
+    private func jsonResultRawWithModel(text: String, model: String) -> String {
+        #"""
+        {"type":"result","subtype":"success","is_error":false,"result":"\#(text)","session_id":"abc","stop_reason":"end_turn","model":"\#(model)"}
         """#
     }
 }

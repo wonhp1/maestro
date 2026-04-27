@@ -63,6 +63,16 @@ public protocol AgentAdapter: Sendable {
 
     /// 세션 컨텍스트에서 사용 가능한 슬래시 명령. 기본 구현은 빈 배열.
     func listSlashCommands(in session: Session) async -> [SlashCommand]
+
+    /// v0.5.2 — 이 세션이 실제로 사용 중인 LLM 모델 ID. UI 의 모델 표시 라벨이
+    /// 호출.
+    /// 우선순위 (어댑터별 구현 책임):
+    /// 1. session.modelId (사용자가 폴더 설정에서 명시)
+    /// 2. 어댑터가 응답에서 capture 한 lastSeenModel (Claude 가 쓰는 패턴)
+    /// 3. 어댑터의 알려진 default (예: Aider 의 `gpt-4o`)
+    /// 4. 모를 때 nil — UI 가 "감지 중…" 표시.
+    /// 기본 구현은 session.modelId 그대로 반환 (mock/aider 호환).
+    func resolvedModel(for session: Session) async -> String?
 }
 
 // MARK: - Default implementations
@@ -108,6 +118,12 @@ public extension AgentAdapter {
         folderPath: URL, preferredSessionId: SessionID?, modelId: String?
     ) async throws -> Session {
         try await createSession(folderPath: folderPath)
+    }
+
+    /// 기본 구현: session.modelId 그대로 반환. 어댑터가 응답에서 capture 한
+    /// lastSeenModel 이 있으면 override.
+    func resolvedModel(for session: Session) async -> String? {
+        session.modelId
     }
 
     /// 기본 아이콘 — 미설정 어댑터용 fallback.

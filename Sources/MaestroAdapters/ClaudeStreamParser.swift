@@ -11,6 +11,19 @@ import MaestroCore
 ///
 /// 알 수 없는 타입은 무시 (defensive parsing — Claude CLI 추가 type 호환).
 public enum ClaudeStreamParser {
+    /// v0.5.2 — 한 라인이 `system.init` 라면 거기서 model 추출. 그 외엔 nil.
+    /// `claude --output-format stream-json` 의 첫 라인 패턴:
+    /// `{"type":"system","subtype":"init","model":"claude-sonnet-4-5","session_id":...}`
+    public static func extractModel(from line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String, type == "system",
+              let subtype = json["subtype"] as? String, subtype == "init",
+              let model = json["model"] as? String, !model.isEmpty
+        else { return nil }
+        return model
+    }
+
     /// 한 라인을 0개 이상의 `ResponseChunk` 로 변환.
     /// 디코드 실패 라인은 빈 배열 (silent — 호출자가 판단).
     public static func parse(line: String) -> [ResponseChunk] {

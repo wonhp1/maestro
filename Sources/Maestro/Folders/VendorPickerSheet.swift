@@ -14,6 +14,9 @@ struct VendorPickerSheet: View {
 
     @State private var selectedAdapterID: String = ""
     @State private var pendingInstallAdapterID: String?
+    /// v0.8.0 — Aider 선택 시 git/python 의존성 검사 결과 캐시.
+    /// nil = 아직 검사 안 됨, .checking = 진행 중, .ready(status) = 완료.
+    @State private var aiderDepsState: AiderDepsState = .idle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -79,6 +82,10 @@ struct VendorPickerSheet: View {
                     onRequestInstall: { pendingInstallAdapterID = adapterId }
                 )
             }
+            // v0.8.0 — Aider 선택 시 git/python 의존성 inline 안내.
+            if selectedAdapterID == "aider" {
+                aiderDependencyBanner
+            }
             if detectionViewModel.sortedAdapterIDs.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "arrow.triangle.2.circlepath")
@@ -128,7 +135,14 @@ struct VendorPickerSheet: View {
               let detection = detectionViewModel.detection(for: selectedAdapterID) else {
             return false
         }
-        return detection.isInstalled
+        guard detection.isInstalled else { return false }
+        // v0.8.0 — Aider 는 git + python3 도 모두 ready 여야 폴더 추가 허용.
+        if selectedAdapterID == "aider" {
+            if case let .ready(deps) = aiderDepsState, deps.allReady { return true }
+            // 검사 진행 중 또는 실패 → 사용자가 deps 채울 때까지 disable.
+            return false
+        }
+        return true
     }
 
     private func loadDetections() async {
@@ -140,6 +154,105 @@ struct VendorPickerSheet: View {
            }) {
             selectedAdapterID = firstInstalled
         }
+        // 첫 선택이 aider 면 의존성 미리 점검.
+        if selectedAdapterID == "aider", case .idle = aiderDepsState {
+            await loadAiderDeps()
+        }
+    }
+
+    /// v0.8.0 — Aider 의존성 (git, python3) 검사. selectedAdapterID 가 aider 일 때만 호출.
+    private func loadAiderDeps() async {
+        aiderDepsState = .checking
+        let checker = EnvironmentChecker()
+        async let git = checker.checkGit()
+        async let py = checker.checkPython3()
+        let result = AiderDeps(git: await git, python3: await py)
+        aiderDepsState = .ready(result)
+    }
+
+    @ViewBuilder
+    private var aiderDependencyBanner: some View {
+        switch aiderDepsState {
+        case .idle:
+            Color.clear.frame(height: 0)
+                .task { await loadAiderDeps() }
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Aider 의존성 (git, python3) 검사 중…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .ready(let deps):
+            if deps.allReady {
+                EmptyView()
+            } else {
+                aiderDepsWarning(deps)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func aiderDepsWarning(_ deps: AiderDeps) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Aider 사용에 필요한 도구가 누락됐습니다")
+                    .font(.callout).bold()
+            }
+            if !deps.git.isReady {
+                HStack(spacing: 8) {
+                    Text("• git").font(.caption)
+                    Button {
+                        if let url = URL(string: "https://git-scm.com/download/mac") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Label("git 다운로드 페이지 열기", systemImage: "arrow.up.forward.app")
+                            .font(.caption)
+                    }
+                    .controlSize(.small)
+                    Button("다시 검사") { Task { await loadAiderDeps() } }
+                        .controlSize(.small)
+                }
+            }
+            if !deps.python3.isReady {
+                Text("• python3 \(versionLabel(deps.python3)) — Aider 는 python 3.10+ 필요. 시스템 업데이트 또는 Homebrew 사용 권장.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func versionLabel(_ status: ToolStatus) -> String {
+        switch status {
+        case .installed(let version?):
+            return "(v\(version))"
+        case .installed(nil):
+            return "(설치됨)"
+        case .outdated(let current, let required):
+            return "(현재 \(current), \(required) 이상 필요)"
+        case .notInstalled:
+            return "(미설치)"
+        }
+    }
+
+    /// Aider 의존성 검사 진행 상태.
+    private enum AiderDepsState: Equatable {
+        case idle
+        case checking
+        case ready(AiderDeps)
+    }
+
+    /// Aider 가 필요로 하는 git + python3 도구의 상태.
+    private struct AiderDeps: Equatable {
+        let git: ToolStatus
+        let python3: ToolStatus
+        var allReady: Bool { git.isReady && python3.isReady }
     }
 }
 

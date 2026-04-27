@@ -151,12 +151,20 @@ public actor ClaudeAdapter: AgentAdapter {
         logger.info("destroySession id=\(id.rawValue)")
     }
 
-    /// v0.5.2 — 우선순위: 사용자 지정 modelId → 응답에서 capture 한 last seen.
-    /// 응답 한 번도 안 받았고 사용자가 modelId 지정 안 했으면 nil → UI 가 "감지 중…".
+    /// v0.5.2 — 우선순위:
+    /// 1. 사용자 지정 session.modelId
+    /// 2. 응답에서 capture 한 lastSeen (가장 정확 — Claude Code 의 실제 동작 모델)
+    /// 3. Claude Code CLI 의 알려진 default (현재 sonnet 4.5) — 응답 1회 받기 전 표시용
+    /// 사용자가 CLI 쪽에서 default 를 바꿨다면 첫 응답 후 lastSeen 으로 자동 정정.
     public func resolvedModel(for session: Session) async -> String? {
         if let explicit = session.modelId, !explicit.isEmpty { return explicit }
-        return lastSeenModelBySession[session.id]
+        if let lastSeen = lastSeenModelBySession[session.id] { return lastSeen }
+        return Self.knownDefaultModel
     }
+
+    /// v0.5.2 — Claude Code CLI 의 stock default. CLI 가 새 모델로 default 옮기면
+    /// 여기 + 사용자가 한 번 응답 받으면 자동 capture 가 정정.
+    public static let knownDefaultModel = "claude-sonnet-4-5"
 
     public func sendMessage(
         _ envelope: MessageEnvelope,

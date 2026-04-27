@@ -149,12 +149,18 @@ struct DiscussionDetailView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(viewModel.envelopes) { envelope in
-                        DiscussionBubble(envelope: envelope)
-                            .id(envelope.id)
+                        DiscussionBubble(
+                            envelope: envelope,
+                            agentDisplayResolver: agentDisplayResolver
+                        )
+                        .id(envelope.id)
                     }
                     if let speaker = viewModel.currentSpeaker {
-                        DiscussionTypingRow(speaker: speaker)
-                            .id("typing")
+                        DiscussionTypingRow(
+                            speaker: speaker,
+                            agentDisplayResolver: agentDisplayResolver
+                        )
+                        .id("typing")
                     }
                 }
                 .padding(16)
@@ -284,13 +290,16 @@ struct DiscussionDetailView: View {
 
 private struct DiscussionBubble: View {
     let envelope: MessageEnvelope
+    /// v0.5.3 — AgentID → 폴더 displayName resolver. raw "agent-{uuid}" 대신
+    /// 폴더 이름 (예: "cfo") 표시. 토론창이 컨트롤타워 다른 화면과 같은 라벨 사용.
+    let agentDisplayResolver: (AgentID) -> String
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             ParticipantAvatar(agentId: envelope.from, size: 32)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(envelope.from.rawValue)
+                    Text(agentDisplayResolver(envelope.from))
                         .font(.callout.weight(.semibold))
                     Text(envelope.createdAt, style: .time)
                         .font(.caption2)
@@ -334,12 +343,14 @@ private struct DiscussionBubble: View {
 
 private struct DiscussionTypingRow: View {
     let speaker: AgentID
+    /// v0.5.3 — DiscussionBubble 와 동일한 displayName resolver.
+    let agentDisplayResolver: (AgentID) -> String
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             ParticipantAvatar(agentId: speaker, size: 32)
             VStack(alignment: .leading, spacing: 4) {
-                Text(speaker.rawValue)
+                Text(agentDisplayResolver(speaker))
                     .font(.callout.weight(.semibold))
                 TypingIndicator()
                     .padding(10)

@@ -277,11 +277,11 @@ final class ClaudeAdapterTests: XCTestCase {
         )
         let adapter = try makeAdapter(executor: exec, executableExists: true)
         let session = try await adapter.createSession(folderPath: tempHome)
-        // 응답 전엔 nil
+        // 응답 전엔 fallback (knownDefaultModel) — UI 가 "감지 중…" 대신 stock 값 표시.
         let before = await adapter.resolvedModel(for: session)
-        XCTAssertNil(before)
+        XCTAssertEqual(before, ClaudeAdapter.knownDefaultModel)
         _ = try await adapter.sendMessage(makeTaskEnvelope(body: "hi"), in: session)
-        // 응답 후 capture 됨
+        // 응답 후 lastSeen 으로 정정.
         let after = await adapter.resolvedModel(for: session)
         XCTAssertEqual(after, "claude-sonnet-4-5-20250929")
     }

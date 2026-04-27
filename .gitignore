@@ -37,7 +37,7 @@ xcuserdata/
 .build/
 .swiftpm/
 Packages/
-Package.resolved
+# Package.resolved IS committed — supply-chain reproducibility (ed4f0c9 audit).
 *.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Generated
@@ -80,3 +80,12 @@ coverage/
 *.mobileprovision
 AuthKey_*.p8
 EXPORT_OPTIONS.plist
+# Defense-in-depth — generic secret patterns
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets.json
+credentials.json

@@ -439,7 +439,7 @@ Phase 6-7 완료 시점에 다음 질문으로 방식 재검토:
 
 ### 출발점: ControlKim (v0 프로토타입)
 
-2026년 초, 사용자(`gimgyeong-won`)는 **ControlKim** 이라는 Next.js 기반 웹앱을 만들었음. 위치: `/Users/gimgyeong-won/Desktop/kax/control-kim/`.
+2026년 초, 1인 개발자가 **ControlKim** 이라는 Next.js 기반 웹앱을 만들었음 (로컬 prototype).
 
 핵심 아이디어는 **"폴더마다 Claude 세션 하나, 웹 터미널(xterm.js)로 상호작용, 컨트롤 타워로 @멘션 라우팅"**. 동작하는 프로토타입이었지만 몇 가지 한계 발견:
 
@@ -2075,7 +2075,7 @@ P21(패키징) 완료 후 앱이 "설치는 되는" 상태. M8에서 **실사용
 
 ### 레퍼런스 구현 (ControlKim 전작)
 
-- `/Users/gimgyeong-won/Desktop/kax/control-kim/` — PoC / 기능 검증된 프로토타입
+- ControlKim (로컬 prototype) — PoC / 기능 검증된 프로토타입
 - 재사용 가능한 패턴:
   - `terminalRouting.ts` (Swift로 포팅)
   - `jsonlTail` 증분 읽기 패턴

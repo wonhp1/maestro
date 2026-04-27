@@ -109,10 +109,8 @@ API 키/시크릿: **macOS Keychain** (평문 저장 금지)
 
 ## 사용자 (1인)
 
-- **이름**: 김경원 (gimgyeong-won)
-- **이메일**: wme1018@gmail.com
 - **주 언어**: 한국어 (UI 1차 타겟, 영어는 2차)
-- **전작**: ControlKim (`/Users/gimgyeong-won/Desktop/kax/control-kim/`)
+- **전작**: ControlKim — Next.js 기반 프로토타입.
 
 ## Phase 진행 방식
 
@@ -169,7 +167,7 @@ git log --oneline | head -20
 
 1. 계획서의 해당 Phase "Rollback Strategy" 참조
 2. 이전 Phase의 `docs/reviews/phase-N.md` 에서 비슷한 문제 있었는지 검색
-3. ControlKim (`/Users/gimgyeong-won/Desktop/kax/control-kim/`) 의 유사 기능 구현 참조
+3. ControlKim (로컬 prototype) 의 유사 기능 구현 참조
 4. Swift 문서: https://docs.swift.org/swift-book/
 5. 그래도 안 되면 사용자에게 질문
 

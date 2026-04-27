@@ -103,7 +103,7 @@ swift test
 
 ## 🪴 이전 작품
 
-**ControlKim** (`/Users/gimgyeong-won/Desktop/kax/control-kim/`) — Next.js 기반 프로토타입. Maestro는 ControlKim의 경험을 바탕으로 **네이티브 + 벤더 중립** 방향으로 새로 설계됨.
+**ControlKim** — Next.js 기반 프로토타입. Maestro는 ControlKim의 경험을 바탕으로 **네이티브 + 벤더 중립** 방향으로 새로 설계됨.
 
 ## 📜 License
 

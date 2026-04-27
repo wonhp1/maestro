@@ -33,6 +33,11 @@ GitHub Actions 에서도 사용하려면 Keychain 에서 export:
 security find-generic-password -ga "ed25519" -w
 ```
 
+> ⚠️ **CRITICAL**: 위 명령 출력 (private key) 은 **절대 git commit / 채팅 / 이슈 / 스크린샷에
+> 포함하지 마세요.** 노출되면 공격자가 위조 업데이트를 푸시할 수 있어요. GitHub Actions
+> Secrets (`MAESTRO_SPARKLE_PRIVATE_KEY`) 또는 1Password 같은 secret manager 에만 저장.
+> 노출 의심 시 즉시 새 키 페어 생성 + 모든 사용자 강제 마이그레이션 필요.
+
 ## 2. appcast.xml 호스팅
 
 GitHub Pages 권장 (무료, HTTPS):

@@ -13,7 +13,7 @@
 
 **VendorPickerSheet**:
 
-- 헤더: "어떤 에이전트를 사용할까요?" + 경로 `/Users/gimgyeong-won/Desktop/sample/projects/cto`
+- 헤더: "어떤 에이전트를 사용할까요?" + 경로 `~/Desktop/sample/projects/cto`
 - Aider:
   - "오픈소스 멀티 모델 (OpenAI / Claude / Gemini 등) 지원. git 자동 커밋 강점."
   - 빨간 ✗ 미설치

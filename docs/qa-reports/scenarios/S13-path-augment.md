@@ -23,14 +23,14 @@
 ```
 === 2026-04-25 17:15:50 +0000 ===
 result: augmented: +11 entries
-HOME: /Users/gimgyeong-won
+HOME: ~
 SHELL env: /bin/zsh
 PATH after augment:
   /usr/bin /bin /usr/sbin /sbin
-  /Users/gimgyeong-won/.bun/bin
-  /Users/gimgyeong-won/.antigravity/antigravity/bin
-  /Users/gimgyeong-won/.npm-global/bin     ← claude 위치
-  /Users/gimgyeong-won/bin
+  ~/.bun/bin
+  ~/.antigravity/antigravity/bin
+  ~/.npm-global/bin     ← claude 위치
+  ~/bin
   /Library/Frameworks/Python.framework/Versions/3.14/bin
   /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin
   /Library/Apple/usr/bin

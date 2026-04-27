@@ -46,33 +46,43 @@ jobs:
         run: scripts/build-app.sh
 
       - name: Import codesign cert
-        if: ${{ env.MAESTRO_SIGN_P12_BASE64 != '' }}
+        # secret 컨텍스트는 step `if:` 에서 직접 평가 가능. step-level `env:` 는
+        # condition 평가 시점엔 없으므로 audit 가 발견한 self-referential 버그
+        # 회피.
+        if: ${{ secrets.MAESTRO_SIGN_P12_BASE64 != '' }}
         env:
           P12: ${{ secrets.MAESTRO_SIGN_P12_BASE64 }}
           P12_PASS: ${{ secrets.MAESTRO_SIGN_P12_PASSWORD }}
         run: |
+          # ephemeral runner — 그래도 keychain password 는 매 빌드마다 random.
+          KEYCHAIN_PASS=$(openssl rand -hex 16)
+          echo "::add-mask::$KEYCHAIN_PASS"
+          echo "MAESTRO_KEYCHAIN_PASS=$KEYCHAIN_PASS" >> "$GITHUB_ENV"
+
           KEYCHAIN=maestro-build.keychain
-          security create-keychain -p actions $KEYCHAIN
+          security create-keychain -p "$KEYCHAIN_PASS" $KEYCHAIN
           security default-keychain -s $KEYCHAIN
-          security unlock-keychain -p actions $KEYCHAIN
+          security unlock-keychain -p "$KEYCHAIN_PASS" $KEYCHAIN
           security set-keychain-settings $KEYCHAIN
           echo "$P12" | base64 --decode > cert.p12
           security import cert.p12 -k $KEYCHAIN -P "$P12_PASS" -A
           rm cert.p12
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions $KEYCHAIN
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASS" $KEYCHAIN
 
       - name: Store notarytool credentials
-        if: ${{ env.MAESTRO_NOTARY_APP_PASSWORD != '' }}
+        if: ${{ secrets.MAESTRO_NOTARY_APP_PASSWORD != '' }}
         env:
           APPLE_ID: ${{ secrets.MAESTRO_NOTARY_APPLE_ID }}
           TEAM_ID: ${{ secrets.MAESTRO_NOTARY_TEAM_ID }}
           APP_PASS: ${{ secrets.MAESTRO_NOTARY_APP_PASSWORD }}
+        # `|| true` 제거 — 등록 실패는 다음 sign step 의 silent failure 를 만듦.
+        # 명시적 실패가 디버깅 빠름 (audit MEDIUM).
         run: |
           xcrun notarytool store-credentials maestro-notary \
             --apple-id "$APPLE_ID" \
             --team-id "$TEAM_ID" \
             --password "$APP_PASS" \
-            --keychain $HOME/Library/Keychains/maestro-build.keychain-db || true
+            --keychain "$HOME/Library/Keychains/maestro-build.keychain-db"
 
       - name: Sign + notarize
         env:

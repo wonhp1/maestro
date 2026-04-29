@@ -255,69 +255,93 @@ final class EnvironmentCheckerTests: XCTestCase {
         XCTAssertEqual(r, .installed(version: "0.125.0"))
     }
 
-    func testCheckCodexAuthLoggedInReturnsInstalled() async {
+    /// Codex auth tests 는 빈 homeDirectory 가 필요 — 실제 ~/.codex/auth.json
+    /// 우선순위가 stub 결과를 가림.
+    private func emptyHomeDir() throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appending(path: "maestro-codex-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        return tempDir
+    }
+
+    func testCheckCodexAuthLoggedInReturnsInstalled() async throws {
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         let executor = StubExecutor()
         executor.responses["codex"] = ProcessOutput(
             stdout: "Logged in as user@example.com\n", stderr: "", exitCode: 0
         )
         let checker = EnvironmentChecker(
             locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
-            executor: executor
+            executor: executor,
+            homeDirectory: home
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .installed(version: nil))
     }
 
-    func testCheckCodexAuthNotLoggedInReturnsNotInstalled() async {
+    func testCheckCodexAuthNotLoggedInReturnsNotInstalled() async throws {
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         let executor = StubExecutor()
         executor.responses["codex"] = ProcessOutput(
             stdout: "Not logged in\n", stderr: "", exitCode: 0
         )
         let checker = EnvironmentChecker(
             locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
-            executor: executor
+            executor: executor,
+            homeDirectory: home
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .notInstalled)
     }
 
-    func testCheckCodexAuthAPIKeyEnvFallback() async {
-        // CLI 미설치 상태에서도 OPENAI_API_KEY 만으로 인증 OK 로 인정.
+    func testCheckCodexAuthAPIKeyEnvFallback() async throws {
+        // CLI 미설치 + 빈 home 상태에서도 OPENAI_API_KEY 만으로 인증 OK.
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         let checker = EnvironmentChecker(
             locator: StubLocator(mapping: [:]),
             executor: StubExecutor(),
+            homeDirectory: home,
             environment: ["OPENAI_API_KEY": "sk-fake"]
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .installed(version: nil))
     }
 
-    func testCheckCodexAuthEmptyEnvVarNotTreatedAsAuth() async {
-        // OPENAI_API_KEY="" → guard 실패 → CLI 검사로 fall through.
+    func testCheckCodexAuthEmptyEnvVarNotTreatedAsAuth() async throws {
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         let checker = EnvironmentChecker(
-            locator: StubLocator(mapping: [:]),  // CLI 도 없음
+            locator: StubLocator(mapping: [:]),
             executor: StubExecutor(),
+            homeDirectory: home,
             environment: ["OPENAI_API_KEY": ""]
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .notInstalled)
     }
 
-    func testCheckCodexAuthExitNonZeroReturnsNotInstalled() async {
+    func testCheckCodexAuthExitNonZeroReturnsNotInstalled() async throws {
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         let executor = StubExecutor()
         executor.responses["codex"] = ProcessOutput(
             stdout: "", stderr: "internal error", exitCode: 1
         )
         let checker = EnvironmentChecker(
             locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
-            executor: executor
+            executor: executor,
+            homeDirectory: home
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .notInstalled)
     }
 
-    func testCheckCodexAuthExecutorThrowReturnsNotInstalled() async {
-        // ProcessExecutionError.timedOut 같은 throw 시 fallback.
+    func testCheckCodexAuthExecutorThrowReturnsNotInstalled() async throws {
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         final class ThrowingExec: ProcessExecuting, @unchecked Sendable {
             func run(
                 executable: URL,
@@ -330,21 +354,66 @@ final class EnvironmentCheckerTests: XCTestCase {
         }
         let checker = EnvironmentChecker(
             locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
-            executor: ThrowingExec()
+            executor: ThrowingExec(),
+            homeDirectory: home
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .notInstalled)
     }
 
-    func testCheckCodexAuthAmbiguousOutputConservative() async {
-        // 모호한 output (positive/negative 어느 쪽도 매치 X) → notInstalled (보수적).
+    func testCheckCodexAuthFromAuthJsonFile() async throws {
+        // ~/.codex/auth.json 존재 + valid JSON → installed (subprocess 안 거침).
+        let tempDir = FileManager.default.temporaryDirectory
+            .appending(path: "maestro-codex-auth-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let codexDir = tempDir.appending(path: ".codex", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        let authFile = codexDir.appending(path: "auth.json", directoryHint: .notDirectory)
+        try Data("{\"token\":\"oauth-token\"}".utf8).write(to: authFile)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),  // CLI 없어도 됨
+            executor: StubExecutor(),
+            homeDirectory: tempDir
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .installed(version: nil))
+    }
+
+    func testCheckCodexAuthCorruptAuthJsonFallsThroughToCLI() async throws {
+        // corrupt auth.json → file fast path 실패 → CLI status 로 fall through.
+        let tempDir = FileManager.default.temporaryDirectory
+            .appending(path: "maestro-codex-corrupt-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let codexDir = tempDir.appending(path: ".codex", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        let authFile = codexDir.appending(path: "auth.json", directoryHint: .notDirectory)
+        try Data("not json {{{".utf8).write(to: authFile)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let executor = StubExecutor()
+        executor.responses["codex"] = ProcessOutput(
+            stdout: "Logged in using ChatGPT\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: executor,
+            homeDirectory: tempDir
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .installed(version: nil))
+    }
+
+    func testCheckCodexAuthAmbiguousOutputConservative() async throws {
+        let home = try emptyHomeDir()
+        defer { try? FileManager.default.removeItem(at: home) }
         let executor = StubExecutor()
         executor.responses["codex"] = ProcessOutput(
             stdout: "Some unknown status response\n", stderr: "", exitCode: 0
         )
         let checker = EnvironmentChecker(
             locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
-            executor: executor
+            executor: executor,
+            homeDirectory: home
         )
         let r = await checker.checkCodexAuth()
         XCTAssertEqual(r, .notInstalled)

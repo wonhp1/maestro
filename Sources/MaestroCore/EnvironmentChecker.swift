@@ -121,20 +121,27 @@ public struct EnvironmentChecker: Sendable {
         )
     }
 
-    /// Codex 인증 — 우선순위:
+    /// Codex 인증 — 우선순위 (Phase 2B 갱신):
     /// 1. `OPENAI_API_KEY` 환경변수 존재 (CLI 미설치라도 인정)
-    /// 2. `codex login status` 실행 결과 — exit 0 + 명시적 positive 매칭 (must-fix D-HIGH).
-    ///
-    /// `codex login status` 는 미로그인 상태에서도 exit 0 를 반환 (이 명령 자체는 성공) —
-    /// stdout 텍스트가 유일한 신호. 로케일 변동 / 문구 변경에 견고하도록:
-    /// - exit ≠ 0 → notInstalled
-    /// - negative 문구 ("not logged in" 등) 매치 → notInstalled
-    /// - positive 문구 ("logged in", "authenticated", "✓") 매치 → installed
-    /// - 그 외 (모호) → conservative 하게 notInstalled
+    /// 2. `~/.codex/auth.json` 존재 + valid JSON dict (OAuth 로그인 후 자동 생성, 4KB).
+    ///    파일 기반 체크가 subprocess 호출보다 빠름.
+    /// 3. fallback: `codex login status` 실행 결과 분류.
     public func checkCodexAuth() async -> ToolStatus {
         if let key = environmentSnapshot["OPENAI_API_KEY"], !key.isEmpty {
             return .installed(version: nil)
         }
+        // Phase 2B: auth.json 파일 우선 체크 (fast path).
+        let authPath = homeDirectory
+            .appending(path: ".codex/auth.json", directoryHint: .notDirectory)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: authPath.path, isDirectory: &isDir),
+           !isDir.boolValue,
+           let data = try? Data(contentsOf: authPath), !data.isEmpty,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           !json.isEmpty {
+            return .installed(version: nil)
+        }
+        // Fallback: login status 명령 분류.
         guard let codexPath = locator.locate("codex") else { return .notInstalled }
         let output: ProcessOutput
         do {

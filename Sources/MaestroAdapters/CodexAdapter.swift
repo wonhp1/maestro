@@ -119,12 +119,65 @@ public actor CodexAdapter: AgentAdapter {
         logger.info("destroySession id=\(id.rawValue)")
     }
 
-    /// Phase 2B 에서 구현 — 현재는 unsupported throw.
+    /// Codex 비대화형 모드 (`codex exec --json`) 으로 메시지 전송 + 응답 회수.
+    ///
+    /// 첫 호출: `codex exec [PROMPT] --json --skip-git-repo-check -C <FOLDER>`
+    /// 후속 호출: `codex exec resume <thread_id> [PROMPT] --json -C <FOLDER>`
+    /// (initializedSessions 추적 — destroy 후 재생성 시 cache 비워짐)
     public func sendMessage(
         _ envelope: MessageEnvelope,
         in session: Session
     ) async throws -> MessageEnvelope {
-        throw AdapterError.unsupported(operation: "CodexAdapter.sendMessage (Phase 2B)")
+        let executable = try await resolveExecutable()
+        let arguments = buildArguments(prompt: envelope.body, session: session)
+        let env = sanitizer.sanitize(ProcessInfo.processInfo.environment)
+        let output: ProcessOutput
+        do {
+            output = try await executor.run(
+                executable: executable,
+                arguments: arguments,
+                currentDirectoryURL: session.folderPath,
+                environment: env
+            )
+        } catch {
+            invalidateDetectionCache()
+            throw error
+        }
+        // stdout cap 검사
+        if output.stdout.utf8.count > Self.maxCollectedOutputBytes {
+            throw AdapterError.processFailed(
+                exitCode: -1,
+                stderr: "Codex stdout exceeded \(Self.maxCollectedOutputBytes) bytes"
+            )
+        }
+        // exit code 검사 (turn.failed 도 비-0 일 수 있음)
+        let events = CodexStreamParser.parseAll(stdout: output.stdout)
+        if events.isEmpty {
+            // 디버깅 위해 stderr 도 snippet 에 포함
+            let snippet = "stdout=\(output.stdout.prefix(300))|stderr=\(output.stderr.prefix(300))|exit=\(output.exitCode)"
+            throw CodexResponseError.malformedOutput(snippet: snippet)
+        }
+        // turn.failed / error event 우선 검사
+        if let errMsg = CodexStreamParser.extractError(events: events) {
+            throw CodexResponseError.codexReportedError(message: errMsg)
+        }
+        // 응답 텍스트 추출
+        guard let agentText = CodexStreamParser.extractFinalAgentMessage(events: events) else {
+            throw CodexResponseError.missingAgentMessage(
+                snippet: String(output.stdout.prefix(500))
+            )
+        }
+        // thread_id 캡처 (resume 용)
+        if let threadId = CodexStreamParser.extractThreadId(events: events) {
+            threadIds[session.id] = threadId
+            initializedSessions.insert(session.id)
+        }
+        // 응답 envelope 생성 — to/from 자동 반전.
+        return MessageEnvelope.report(
+            from: envelope.to,
+            inReplyTo: envelope,
+            body: agentText
+        )
     }
 
     /// Phase 2D 에서 구현 — 현재는 빈 배열.
@@ -158,6 +211,43 @@ public actor CodexAdapter: AgentAdapter {
     /// Phase 2D 에서 구현.
     public func capturedSlashCommands() async -> [String] {
         anySessionSlashCommands
+    }
+
+    // MARK: - Private helpers
+
+    /// detect → executablePath. 미설치 시 throw.
+    private func resolveExecutable() async throws -> URL {
+        let detection = await detect()
+        guard detection.isInstalled, let path = detection.executablePath else {
+            throw AdapterError.notInstalled(adapterId: Self.id)
+        }
+        return path
+    }
+
+    /// argv 빌드. 첫 호출 vs resume 분기.
+    /// - 첫 호출: `codex exec [PROMPT] --json --skip-git-repo-check -s workspace-write [-m MODEL]`
+    /// - 후속: `codex exec resume <THREAD_ID> [PROMPT] --json --skip-git-repo-check [-m MODEL]`
+    /// (`-C` 사용 X — `currentDirectoryURL` 가 spawn 시 cwd 설정. resume 는 `-C` 미지원)
+    /// (resume 는 sandbox 설정 X — 첫 호출에서 결정된 sandbox 가 thread 에 묶임)
+    private func buildArguments(prompt: String, session: Session) -> [String] {
+        let isResume = initializedSessions.contains(session.id) && threadIds[session.id] != nil
+        var args: [String] = ["exec"]
+        if isResume, let threadId = threadIds[session.id] {
+            args.append("resume")
+            args.append(threadId)
+        }
+        args.append(prompt)
+        args.append("--json")
+        args.append("--skip-git-repo-check")
+        // 모델 선택 — 첫 호출과 resume 모두 지원.
+        if let model = session.modelId, !model.isEmpty {
+            args.append(contentsOf: ["-m", model])
+        }
+        // sandbox 는 첫 호출에서만 — resume 는 thread 의 기존 sandbox 사용.
+        if !isResume {
+            args.append(contentsOf: ["-s", "workspace-write"])
+        }
+        return args
     }
 
     // MARK: - Test seam (internal)

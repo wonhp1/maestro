@@ -92,6 +92,26 @@ public actor EnvironmentInstaller {
         progress(.complete)
     }
 
+    /// v0.9.0 — Codex (OpenAI) CLI 자동 설치. `npm install -g @openai/codex` 위임.
+    public func installCodex(
+        progress: @Sendable (InstallProgress) -> Void = { _ in }
+    ) async throws {
+        progress(.running(phase: "Codex (OpenAI) 설치 중…"))
+        let result = try await adapterInstall("codex")
+        try Self.assertSuccess(result)
+        progress(.complete)
+    }
+
+    /// v0.9.0 — Gemini (Google) CLI 자동 설치. `npm install -g @google/gemini-cli` 위임.
+    public func installGemini(
+        progress: @Sendable (InstallProgress) -> Void = { _ in }
+    ) async throws {
+        progress(.running(phase: "Gemini (Google) 설치 중…"))
+        let result = try await adapterInstall("gemini")
+        try Self.assertSuccess(result)
+        progress(.complete)
+    }
+
     // MARK: - Helpers
 
     /// `installer -pkg <path> -target /` — pure logic for testing.

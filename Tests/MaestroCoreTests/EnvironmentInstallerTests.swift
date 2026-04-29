@@ -165,6 +165,82 @@ final class EnvironmentInstallerTests: XCTestCase {
         try await installer.installClaude()  // throws X 면 통과
     }
 
+    // MARK: - Codex / Gemini install (v0.9.0)
+
+    func testInstallCodexFailurePropagatesAsInstallFailed() async {
+        let installer = EnvironmentInstaller(
+            adapterInstall: { _ in
+                .failed(exitCode: 1, stderr: "npm: ENOENT @openai/codex")
+            }
+        )
+        do {
+            try await installer.installCodex()
+            XCTFail("expected installFailed")
+        } catch let err as EnvironmentInstallerError {
+            switch err {
+            case .installFailed(let code, let stderr):
+                XCTAssertEqual(code, 1)
+                XCTAssertTrue(stderr.contains("ENOENT"))
+            default:
+                XCTFail("wrong error: \(err)")
+            }
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
+    func testInstallCodexSuccessPropagates() async throws {
+        let installer = EnvironmentInstaller(
+            adapterInstall: { id in
+                XCTAssertEqual(id, "codex")
+                return .success(stdoutTail: "added 2 packages")
+            }
+        )
+        try await installer.installCodex()
+    }
+
+    func testInstallGeminiFailurePropagatesAsInstallFailed() async {
+        let installer = EnvironmentInstaller(
+            adapterInstall: { _ in
+                .failed(exitCode: 1, stderr: "npm: network error")
+            }
+        )
+        do {
+            try await installer.installGemini()
+            XCTFail("expected installFailed")
+        } catch let err as EnvironmentInstallerError {
+            if case .installFailed = err {} else { XCTFail("wrong: \(err)") }
+        } catch {
+            XCTFail("wrong: \(error)")
+        }
+    }
+
+    func testInstallGeminiSuccessPropagates() async throws {
+        let installer = EnvironmentInstaller(
+            adapterInstall: { id in
+                XCTAssertEqual(id, "gemini")
+                return .success(stdoutTail: "added 2 packages")
+            }
+        )
+        try await installer.installGemini()
+    }
+
+    func testAdapterInstallSpecForCodex() {
+        let spec = AdapterInstaller.spec(for: "codex")
+        XCTAssertNotNil(spec)
+        XCTAssertEqual(spec?.packageManager, "npm")
+        XCTAssertTrue(spec?.installArguments.contains("@openai/codex") == true)
+    }
+
+    func testAdapterInstallSpecForGemini() {
+        let spec = AdapterInstaller.spec(for: "gemini")
+        XCTAssertNotNil(spec)
+        XCTAssertEqual(spec?.packageManager, "npm")
+        XCTAssertTrue(spec?.installArguments.contains("@google/gemini-cli") == true)
+    }
+
+    // MARK: - Aider failure (기존)
+
     func testInstallAiderFailurePropagatesAsInstallFailed() async {
         let installer = EnvironmentInstaller(
             adapterInstall: { _ in

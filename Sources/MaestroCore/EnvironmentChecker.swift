@@ -19,15 +19,20 @@ public struct EnvironmentChecker: Sendable {
     private let locator: any ExecutableLocating
     private let executor: any ProcessExecuting
     private let homeDirectory: URL
+    /// 환경변수 — API key fallback 검사용 (`OPENAI_API_KEY`, `GEMINI_API_KEY`).
+    /// 테스트에서 주입 가능. nil = ProcessInfo 사용.
+    private let environmentSnapshot: [String: String]
 
     public init(
         locator: any ExecutableLocating = PATHExecutableLocator(),
         executor: any ProcessExecuting = DefaultProcessExecutor(timeout: 5),
-        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String]? = nil
     ) {
         self.locator = locator
         self.executor = executor
         self.homeDirectory = homeDirectory
+        self.environmentSnapshot = environment ?? ProcessInfo.processInfo.environment
     }
 
     /// 모든 도구를 병렬 검사 — 결과 EnvironmentStatus 로 합침.
@@ -38,13 +43,21 @@ public struct EnvironmentChecker: Sendable {
         async let python3 = checkPython3()
         async let aider = checkAider()
         async let claudeAuth = checkClaudeAuth()
+        async let codex = checkCodex()
+        async let codexAuth = checkCodexAuth()
+        async let gemini = checkGemini()
+        async let geminiAuth = checkGeminiAuth()
         return await EnvironmentStatus(
             node: node,
             claude: claude,
             git: git,
             python3: python3,
             aider: aider,
-            claudeAuth: claudeAuth
+            claudeAuth: claudeAuth,
+            codex: codex,
+            codexAuth: codexAuth,
+            gemini: gemini,
+            geminiAuth: geminiAuth
         )
     }
 
@@ -96,6 +109,93 @@ public struct EnvironmentChecker: Sendable {
         }
         return .notInstalled
     }
+
+    // MARK: - Codex / Gemini (v0.9.0)
+
+    /// Codex (OpenAI) CLI 설치 여부 + 버전.
+    public func checkCodex() async -> ToolStatus {
+        await checkVersionedBinary(
+            name: "codex",
+            versionArgs: ["--version"],
+            minimumVersion: nil
+        )
+    }
+
+    /// Codex 인증 — 우선순위:
+    /// 1. `OPENAI_API_KEY` 환경변수 존재 (CLI 미설치라도 인정)
+    /// 2. `codex login status` 실행 결과 — exit 0 + 명시적 positive 매칭 (must-fix D-HIGH).
+    ///
+    /// `codex login status` 는 미로그인 상태에서도 exit 0 를 반환 (이 명령 자체는 성공) —
+    /// stdout 텍스트가 유일한 신호. 로케일 변동 / 문구 변경에 견고하도록:
+    /// - exit ≠ 0 → notInstalled
+    /// - negative 문구 ("not logged in" 등) 매치 → notInstalled
+    /// - positive 문구 ("logged in", "authenticated", "✓") 매치 → installed
+    /// - 그 외 (모호) → conservative 하게 notInstalled
+    public func checkCodexAuth() async -> ToolStatus {
+        if let key = environmentSnapshot["OPENAI_API_KEY"], !key.isEmpty {
+            return .installed(version: nil)
+        }
+        guard let codexPath = locator.locate("codex") else { return .notInstalled }
+        let output: ProcessOutput
+        do {
+            output = try await executor.run(
+                executable: codexPath,
+                arguments: ["login", "status"]
+            )
+        } catch {
+            return .notInstalled
+        }
+        return Self.classifyCodexLoginStatus(output: output)
+    }
+
+    /// `codex login status` 출력 분류 — testable static helper.
+    static func classifyCodexLoginStatus(output: ProcessOutput) -> ToolStatus {
+        guard output.exitCode == 0 else { return .notInstalled }
+        let combined = (output.stdout + output.stderr).lowercased()
+        // Negative 우선 — 명시적 미로그인 문구.
+        let negative = ["not logged in", "no active session", "no credentials", "logged out"]
+        if negative.contains(where: { combined.contains($0) }) {
+            return .notInstalled
+        }
+        // Positive — 알려진 로그인 indicator.
+        let positive = ["logged in", "authenticated", "auth ok", "✓"]
+        if positive.contains(where: { combined.contains($0) }) {
+            return .installed(version: nil)
+        }
+        // 모호 → conservative.
+        return .notInstalled
+    }
+
+    /// Gemini (Google) CLI 설치 여부 + 버전.
+    public func checkGemini() async -> ToolStatus {
+        await checkVersionedBinary(
+            name: "gemini",
+            versionArgs: ["--version"],
+            minimumVersion: nil
+        )
+    }
+
+    /// Gemini 인증 — 우선순위:
+    /// 1. `GEMINI_API_KEY` 환경변수
+    /// 2. `~/.gemini/oauth_creds.json` 존재 + 내용 있음 + valid JSON dict
+    ///    (claudeAuth 와 대칭 — corrupt/empty stub 차단, /team B-nice-to-have).
+    public func checkGeminiAuth() async -> ToolStatus {
+        if let key = environmentSnapshot["GEMINI_API_KEY"], !key.isEmpty {
+            return .installed(version: nil)
+        }
+        let credPath = homeDirectory
+            .appending(path: ".gemini/oauth_creds.json", directoryHint: .notDirectory)
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: credPath.path, isDirectory: &isDir)
+        guard exists, !isDir.boolValue,
+              let data = try? Data(contentsOf: credPath), !data.isEmpty,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !json.isEmpty
+        else { return .notInstalled }
+        return .installed(version: nil)
+    }
+
+    // MARK: - Claude auth
 
     /// Claude OAuth 완료 여부 — `~/.claude/credentials.json` 가 valid JSON dict 일 때만
     /// `installed`. 단순 size>0 만으로는 corrupt/empty stub 도 통과 → false positive

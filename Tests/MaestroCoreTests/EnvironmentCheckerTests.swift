@@ -1,6 +1,7 @@
 @testable import MaestroCore
 import XCTest
 
+// swiftlint:disable:next type_body_length
 final class EnvironmentCheckerTests: XCTestCase {
     // MARK: - StubLocator + StubExecutor
 
@@ -228,6 +229,306 @@ final class EnvironmentCheckerTests: XCTestCase {
         XCTAssertTrue(ToolStatus.installed(version: nil).isReady)
         XCTAssertFalse(ToolStatus.notInstalled.isReady)
         XCTAssertFalse(ToolStatus.outdated(current: "v14", required: "v18").isReady)
+    }
+
+    // MARK: - Codex check (v0.9.0)
+
+    func testCheckCodexMissingReturnsNotInstalled() async {
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor()
+        )
+        let r = await checker.checkCodex()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckCodexInstalledExtractsVersion() async {
+        let executor = StubExecutor()
+        executor.responses["codex"] = ProcessOutput(
+            stdout: "codex-cli 0.125.0\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: executor
+        )
+        let r = await checker.checkCodex()
+        XCTAssertEqual(r, .installed(version: "0.125.0"))
+    }
+
+    func testCheckCodexAuthLoggedInReturnsInstalled() async {
+        let executor = StubExecutor()
+        executor.responses["codex"] = ProcessOutput(
+            stdout: "Logged in as user@example.com\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: executor
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .installed(version: nil))
+    }
+
+    func testCheckCodexAuthNotLoggedInReturnsNotInstalled() async {
+        let executor = StubExecutor()
+        executor.responses["codex"] = ProcessOutput(
+            stdout: "Not logged in\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: executor
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckCodexAuthAPIKeyEnvFallback() async {
+        // CLI 미설치 상태에서도 OPENAI_API_KEY 만으로 인증 OK 로 인정.
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor(),
+            environment: ["OPENAI_API_KEY": "sk-fake"]
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .installed(version: nil))
+    }
+
+    func testCheckCodexAuthEmptyEnvVarNotTreatedAsAuth() async {
+        // OPENAI_API_KEY="" → guard 실패 → CLI 검사로 fall through.
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),  // CLI 도 없음
+            executor: StubExecutor(),
+            environment: ["OPENAI_API_KEY": ""]
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckCodexAuthExitNonZeroReturnsNotInstalled() async {
+        let executor = StubExecutor()
+        executor.responses["codex"] = ProcessOutput(
+            stdout: "", stderr: "internal error", exitCode: 1
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: executor
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckCodexAuthExecutorThrowReturnsNotInstalled() async {
+        // ProcessExecutionError.timedOut 같은 throw 시 fallback.
+        final class ThrowingExec: ProcessExecuting, @unchecked Sendable {
+            func run(
+                executable: URL,
+                arguments: [String],
+                currentDirectoryURL: URL?,
+                environment: [String: String]?
+            ) async throws -> ProcessOutput {
+                throw ProcessExecutionError.timedOut
+            }
+        }
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: ThrowingExec()
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckCodexAuthAmbiguousOutputConservative() async {
+        // 모호한 output (positive/negative 어느 쪽도 매치 X) → notInstalled (보수적).
+        let executor = StubExecutor()
+        executor.responses["codex"] = ProcessOutput(
+            stdout: "Some unknown status response\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["codex": URL(filePath: "/usr/local/bin/codex")]),
+            executor: executor
+        )
+        let r = await checker.checkCodexAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testClassifyCodexLoginStatusPositiveVariants() {
+        // 다양한 "logged in" 표현이 모두 installed 로 분류.
+        let cases = [
+            "Logged in as foo@bar.com",
+            "User authenticated successfully",
+            "✓ logged in",
+        ]
+        for stdout in cases {
+            let out = ProcessOutput(stdout: stdout, stderr: "", exitCode: 0)
+            XCTAssertEqual(
+                EnvironmentChecker.classifyCodexLoginStatus(output: out),
+                .installed(version: nil),
+                "expected installed for: \(stdout)"
+            )
+        }
+    }
+
+    func testClassifyCodexLoginStatusNegativeVariants() {
+        let cases = [
+            "Not logged in",
+            "no active session for this user",
+            "no credentials found",
+            "you are logged out",
+        ]
+        for stdout in cases {
+            let out = ProcessOutput(stdout: stdout, stderr: "", exitCode: 0)
+            XCTAssertEqual(
+                EnvironmentChecker.classifyCodexLoginStatus(output: out),
+                .notInstalled,
+                "expected notInstalled for: \(stdout)"
+            )
+        }
+    }
+
+    // MARK: - Gemini check (v0.9.0)
+
+    func testCheckGeminiMissingReturnsNotInstalled() async {
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor()
+        )
+        let r = await checker.checkGemini()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckGeminiInstalledExtractsVersion() async {
+        let executor = StubExecutor()
+        executor.responses["gemini"] = ProcessOutput(
+            stdout: "0.40.0\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["gemini": URL(filePath: "/usr/local/bin/gemini")]),
+            executor: executor
+        )
+        let r = await checker.checkGemini()
+        XCTAssertEqual(r, .installed(version: "0.40.0"))
+    }
+
+    func testCheckGeminiAuthOAuthFileExists() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appending(path: "maestro-vm-gemini-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let gemDir = tempDir.appending(path: ".gemini", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: gemDir, withIntermediateDirectories: true)
+        let cred = gemDir.appending(path: "oauth_creds.json", directoryHint: .notDirectory)
+        try Data("{\"refresh_token\":\"x\"}".utf8).write(to: cred)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor(),
+            homeDirectory: tempDir
+        )
+        let r = await checker.checkGeminiAuth()
+        XCTAssertEqual(r, .installed(version: nil))
+    }
+
+    func testCheckGeminiAuthMissingFileReturnsNotInstalled() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appending(path: "maestro-vm-gem2-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor(),
+            homeDirectory: tempDir
+        )
+        let r = await checker.checkGeminiAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    func testCheckGeminiAuthAPIKeyEnvFallback() async {
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor(),
+            environment: ["GEMINI_API_KEY": "AIzaFake"]
+        )
+        let r = await checker.checkGeminiAuth()
+        XCTAssertEqual(r, .installed(version: nil))
+    }
+
+    func testCheckGeminiAuthCorruptJSONTreatedAsMissing() async throws {
+        // claudeAuth 와 대칭 — corrupt JSON 도 차단.
+        let tempDir = FileManager.default.temporaryDirectory
+            .appending(path: "maestro-vm-gem3-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let gemDir = tempDir.appending(path: ".gemini", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: gemDir, withIntermediateDirectories: true)
+        let cred = gemDir.appending(path: "oauth_creds.json", directoryHint: .notDirectory)
+        try Data("not json {{{".utf8).write(to: cred)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [:]),
+            executor: StubExecutor(),
+            homeDirectory: tempDir
+        )
+        let r = await checker.checkGeminiAuth()
+        XCTAssertEqual(r, .notInstalled)
+    }
+
+    // MARK: - codexReady / geminiReady
+
+    func testCodexReadyRequiresAllThree() {
+        let allReady = EnvironmentStatus(
+            node: .installed(version: "v22"),
+            claude: .notInstalled,
+            git: .notInstalled,
+            python3: .notInstalled,
+            aider: .notInstalled,
+            claudeAuth: .notInstalled,
+            codex: .installed(version: "0.125.0"),
+            codexAuth: .installed(version: nil)
+        )
+        XCTAssertTrue(allReady.codexReady)
+
+        let missingAuth = EnvironmentStatus(
+            node: .installed(version: "v22"),
+            claude: .notInstalled,
+            git: .notInstalled,
+            python3: .notInstalled,
+            aider: .notInstalled,
+            claudeAuth: .notInstalled,
+            codex: .installed(version: "0.125.0"),
+            codexAuth: .notInstalled
+        )
+        XCTAssertFalse(missingAuth.codexReady)
+    }
+
+    func testGeminiReadyRequiresAllThree() {
+        let allReady = EnvironmentStatus(
+            node: .installed(version: "v22"),
+            claude: .notInstalled,
+            git: .notInstalled,
+            python3: .notInstalled,
+            aider: .notInstalled,
+            claudeAuth: .notInstalled,
+            gemini: .installed(version: "0.40.0"),
+            geminiAuth: .installed(version: nil)
+        )
+        XCTAssertTrue(allReady.geminiReady)
+
+        let missingNode = EnvironmentStatus(
+            node: .notInstalled,
+            claude: .notInstalled,
+            git: .notInstalled,
+            python3: .notInstalled,
+            aider: .notInstalled,
+            claudeAuth: .notInstalled,
+            gemini: .installed(version: "0.40.0"),
+            geminiAuth: .installed(version: nil)
+        )
+        XCTAssertFalse(missingNode.geminiReady)
+    }
+
+    func testAdapterRequirementToolsForKnownAdapters() {
+        XCTAssertEqual(AdapterRequirement.tools(for: "claude"), [.node, .claude, .claudeAuth])
+        XCTAssertEqual(AdapterRequirement.tools(for: "aider"), [.git, .python3, .aider])
+        XCTAssertEqual(AdapterRequirement.tools(for: "codex"), [.node, .codex, .codexAuth])
+        XCTAssertEqual(AdapterRequirement.tools(for: "gemini"), [.node, .gemini, .geminiAuth])
+        XCTAssertNil(AdapterRequirement.tools(for: "unknown"))
     }
 
     // MARK: - claudeAuth corrupt JSON

@@ -45,6 +45,18 @@ public struct AdapterInstaller: Sendable {
                 packageManager: "pip3",
                 installArguments: ["install", "--user", "aider-chat"]
             )
+        case "codex":
+            // v0.9.0 — OpenAI Codex CLI. npm 글로벌 설치.
+            return AdapterInstallSpec(
+                packageManager: "npm",
+                installArguments: ["install", "-g", "@openai/codex"]
+            )
+        case "gemini":
+            // v0.9.0 — Google Gemini CLI. npm 글로벌 설치.
+            return AdapterInstallSpec(
+                packageManager: "npm",
+                installArguments: ["install", "-g", "@google/gemini-cli"]
+            )
         default:
             return nil
         }

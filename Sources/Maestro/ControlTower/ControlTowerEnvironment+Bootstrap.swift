@@ -176,6 +176,22 @@ extension ControlTowerEnvironment {
                 id: "adapter-builtin-claude-control"
             )
         }
+        // v0.9.0 — Codex / Gemini 어댑터의 슬래시 명령도 popover 에 노출.
+        // Codex 는 capturedSlashCommands() 가 빈 배열 반환 (CLI 가 builtin 노출 X);
+        // listSlashCommands() 의 정적 builtin (/help, /clear, /model) + skills 만
+        // 사용. 그래도 source 로 등록해 향후 capture 가능해지면 자동 동작.
+        if let codex = await adapterRegistry.adapter(for: CodexAdapter.id) {
+            await slashCommandRegistry.register(
+                AdapterSlashCommandSource(adapter: codex),
+                id: "adapter-builtin-codex"
+            )
+        }
+        if let gemini = await adapterRegistry.adapter(for: GeminiAdapter.id) {
+            await slashCommandRegistry.register(
+                AdapterSlashCommandSource(adapter: gemini),
+                id: "adapter-builtin-gemini"
+            )
+        }
         let watcher = SlashCommandWatcher(
             directories: [commandsDir, skillsDir],
             registry: slashCommandRegistry

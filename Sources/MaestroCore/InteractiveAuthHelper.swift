@@ -114,9 +114,11 @@ public enum InteractiveAuthHelper {
 
     // MARK: - Stage 1: setup
 
-    /// v0.10.0 — 동기 단일 task 내부 전달 전용. `Process`/`Pipe` 가 non-Sendable 이므로
-    /// 의도적으로 `Sendable` 채택 안 함 — Task 경계 너머로 보내려고 하면 컴파일 에러로 차단.
-    /// `cleanupHandlers` 도 같은 이유로 `@Sendable` 안 붙임 (defer-only 사용).
+    /// v0.11.0 — auto-derived non-Sendable. `Process`/`Pipe` 가 non-Sendable 이므로
+    /// OAuthSetup 도 자동으로 non-Sendable 로 처리됨 → `Task { ... setup ... }` 형태로
+    /// 캡처하면 **컴파일러가 차단**. 명시적 `~Sendable` 키워드는 struct 에선 허용 안 됨
+    /// ("Sendable cannot be suppressed") — auto-derivation 이 안전 보장 source.
+    /// v0.10.0 의 주석만 의존하던 부채 해소 — 의도가 타입 시스템으로 표현됨.
     private struct OAuthSetup {
         let process: Process
         let accumulator: OutputAccumulator

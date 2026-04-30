@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 import AppKit
 import MaestroCore
 import SwiftUI
@@ -22,17 +21,8 @@ struct VendorPickerSheet: View {
     /// v0.8.0 — Aider 선택 시 git/python 의존성 검사 결과 캐시.
     /// nil = 아직 검사 안 됨, .checking = 진행 중, .ready(status) = 완료.
     @State private var aiderDepsState: AiderDepsState = .idle
-    /// v0.9.0 — Codex / Gemini 선택 시 auth 검사 (CLI 는 설치됐지만 OAuth 안 된
-    /// 경우 banner 로 안내). adapter id → auth 상태.
-    @State private var authStateByAdapter: [String: AuthState] = [:]
-    /// v0.9.2 — Codex / Gemini 인앱 로그인 진행 중 — adapter id → bool.
-    @State private var loginInProgress: [String: Bool] = [:]
-    /// v0.10.0 Phase 2: 진행 중인 로그인 Task — sheet 닫힘 시 cancel 해서
-    /// 백그라운드 polling 좀비 프로세스 방지. 한 번에 한 어댑터만 로그인 중이
-    /// 가능 (UX 적으로 OAuth 브라우저는 1개) → 단일 Optional 로 충분.
-    @State private var loginTask: Task<Void, Never>?
-    /// v0.9.2 — 인앱 로그인 결과 메시지 (성공/실패/취소). adapter id → message.
-    @State private var loginMessage: [String: String] = [:]
+    /// v0.11.0 — 인증/로그인 로직은 Coordinator 로 분리 (단위 테스트 가능 위치).
+    @State private var authCoordinator = VendorPickerAuthCoordinator()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -51,16 +41,12 @@ struct VendorPickerSheet: View {
         .padding(20)
         .frame(width: 560)
         .task { await loadDetections() }
-        .onDisappear {
-            // v0.10.0 Phase 2: sheet 닫힘 시 진행 중 로그인 cancel — 좀비 프로세스 방지.
-            loginTask?.cancel()
-            loginTask = nil
-        }
+        .onDisappear { authCoordinator.cancelPendingLogin() }
         .onChange(of: selectedAdapterID) { _, newID in
             // v0.9.0 — 사용자가 codex/gemini 행 클릭하면 즉시 auth 검사 시작.
             if newID == "codex" || newID == "gemini" {
-                if case .idle = authStateByAdapter[newID] ?? .idle {
-                    Task { await loadAuth(for: newID) }
+                if case .idle = authCoordinator.authStateByAdapter[newID] ?? .idle {
+                    Task { await authCoordinator.loadAuth(for: newID) }
                 }
             }
         }
@@ -176,7 +162,7 @@ struct VendorPickerSheet: View {
         }
         // v0.9.0 — Codex / Gemini 는 auth 도 통과해야 폴더 추가 허용.
         if selectedAdapterID == "codex" || selectedAdapterID == "gemini" {
-            if case let .ready(authed) = authStateByAdapter[selectedAdapterID] ?? .idle, authed {
+            if case let .ready(authed) = authCoordinator.authStateByAdapter[selectedAdapterID] ?? .idle, authed {
                 return true
             }
             return false
@@ -199,33 +185,17 @@ struct VendorPickerSheet: View {
         }
         // v0.9.0 — codex/gemini 는 auth 미리 점검.
         if selectedAdapterID == "codex" || selectedAdapterID == "gemini" {
-            await loadAuth(for: selectedAdapterID)
+            await authCoordinator.loadAuth(for: selectedAdapterID)
         }
-    }
-
-    /// v0.9.0 — Codex / Gemini 인증 상태 검사.
-    private func loadAuth(for adapterId: String) async {
-        authStateByAdapter[adapterId] = .checking
-        let checker = EnvironmentChecker()
-        let isAuthed: Bool
-        switch adapterId {
-        case "codex":
-            isAuthed = await checker.checkCodexAuth().isReady
-        case "gemini":
-            isAuthed = await checker.checkGeminiAuth().isReady
-        default:
-            isAuthed = true
-        }
-        authStateByAdapter[adapterId] = .ready(isAuthed)
     }
 
     @ViewBuilder
     private func authBanner(for adapterId: String) -> some View {
-        let state = authStateByAdapter[adapterId] ?? .idle
+        let state = authCoordinator.authStateByAdapter[adapterId] ?? .idle
         switch state {
         case .idle:
             Color.clear.frame(height: 0)
-                .task { await loadAuth(for: adapterId) }
+                .task { await authCoordinator.loadAuth(for: adapterId) }
         case .checking:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
@@ -245,8 +215,8 @@ struct VendorPickerSheet: View {
     @ViewBuilder
     private func authMissingBanner(for adapterId: String) -> some View {
         let cliName = adapterId == "codex" ? "Codex" : "Gemini"
-        let inProgress = loginInProgress[adapterId] ?? false
-        let message = loginMessage[adapterId]
+        let inProgress = authCoordinator.loginInProgress[adapterId] ?? false
+        let message = authCoordinator.loginMessage[adapterId]
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -261,9 +231,7 @@ struct VendorPickerSheet: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 Button {
-                    // v0.10.0: Task 핸들 보관 → onDisappear 에서 cancel 가능.
-                    loginTask?.cancel()
-                    loginTask = Task { await performLogin(for: adapterId) }
+                    authCoordinator.startLogin(for: adapterId)
                 } label: {
                     if inProgress {
                         HStack(spacing: 4) {
@@ -279,7 +247,7 @@ struct VendorPickerSheet: View {
                 .disabled(inProgress)
                 .accessibilityLabel(inProgress ? "로그인 진행 중" : "Maestro 로 로그인")
                 .accessibilityHint(inProgress ? "브라우저에서 인증을 완료해주세요" : "브라우저가 자동으로 열립니다")
-                Button("다시 검사") { Task { await loadAuth(for: adapterId) } }
+                Button("다시 검사") { Task { await authCoordinator.loadAuth(for: adapterId) } }
                     .controlSize(.small)
                     .disabled(inProgress)
                     .accessibilityHint("어댑터 인증 상태를 다시 확인")
@@ -309,54 +277,6 @@ struct VendorPickerSheet: View {
             return "또는 터미널에서 `codex login` / OPENAI_API_KEY 환경변수"
         }
         return "또는 터미널에서 `gemini` / GEMINI_API_KEY 환경변수"
-    }
-
-    /// v0.9.2 — codex/gemini 인앱 로그인 dispatch.
-    private func performLogin(for adapterId: String) async {
-        // v0.10.0 review must-fix: 모든 종료 경로 (early return 포함) 에서 task 슬롯 청소.
-        defer { loginTask = nil }
-        let cliName = adapterId  // "codex" or "gemini"
-        guard let path = PATHExecutableLocator().locate(cliName) else {
-            loginMessage[adapterId] = "\(cliName) CLI 를 찾을 수 없어요"
-            return
-        }
-        loginInProgress[adapterId] = true
-        loginMessage[adapterId] = "브라우저에서 로그인 중…"
-        defer { loginInProgress[adapterId] = false }
-
-        let result: InteractiveAuthHelper.LoginResult = await {
-            switch adapterId {
-            case "codex":
-                return await InteractiveAuthHelper.loginCodex(codexPath: path)
-            case "gemini":
-                return await InteractiveAuthHelper.loginGemini(geminiPath: path)
-            default:
-                return .processFailed(message: "지원되지 않는 어댑터: \(adapterId)")
-            }
-        }()
-        switch result {
-        case .success:
-            loginMessage[adapterId] = "로그인 성공"
-            await loadAuth(for: adapterId)
-        case .cancelled:
-            loginMessage[adapterId] = "로그인 취소됨"
-        case .timedOut:
-            loginMessage[adapterId] = "5분 내 로그인 안 됨. 기존 브라우저 탭은 닫고 다시 시도하세요."
-        case .processFailed(let m):
-            loginMessage[adapterId] = "실패: \(m)"
-        case .browserOpenFailed(let url):
-            // v0.9.8: 브라우저 자동 오픈 실패 — URL 클립보드 복사 + 사용자 수동 안내.
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            loginMessage[adapterId] = "브라우저를 열 수 없습니다. URL 을 클립보드에 복사했어요 — 직접 붙여넣어 로그인하세요."
-        }
-    }
-
-    /// v0.9.0 — Codex / Gemini auth 검사 진행 상태.
-    private enum AuthState: Equatable {
-        case idle
-        case checking
-        case ready(Bool)
     }
 
     /// v0.8.0 — Aider 의존성 (git, python3) 검사. selectedAdapterID 가 aider 일 때만 호출.

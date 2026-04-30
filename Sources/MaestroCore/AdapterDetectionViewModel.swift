@@ -72,6 +72,20 @@ public final class AdapterDetectionViewModel {
                 docsURL: URL(string: "https://aider.chat/docs/install.html"),
                 description: "Aider 가 설치되어 있지 않아요."
             )
+        case "codex":
+            // v0.9.0
+            return InstallationHint(
+                command: "npm install -g @openai/codex",
+                docsURL: URL(string: "https://github.com/openai/codex"),
+                description: "OpenAI Codex CLI 가 설치되어 있지 않아요."
+            )
+        case "gemini":
+            // v0.9.0
+            return InstallationHint(
+                command: "npm install -g @google/gemini-cli",
+                docsURL: URL(string: "https://github.com/google-gemini/gemini-cli"),
+                description: "Google Gemini CLI 가 설치되어 있지 않아요."
+            )
         default:
             return nil
         }
@@ -84,6 +98,10 @@ public final class AdapterDetectionViewModel {
             return "Anthropic 의 공식 코딩 에이전트. 도구 사용이 강하고 처음 쓰기 좋아요."
         case "aider":
             return "오픈소스 멀티 모델 (OpenAI / Claude / Gemini 등) 지원. git 자동 커밋 강점."
+        case "codex":
+            return "OpenAI 공식 CLI. ChatGPT Plus/Pro 구독으로 GPT-5/o1 사용 가능."
+        case "gemini":
+            return "Google 공식 CLI. 무료 tier (일 1,500 req) + 1M context 강점."
         default:
             return nil
         }
@@ -93,6 +111,7 @@ public final class AdapterDetectionViewModel {
     public static func recommendationBadge(for adapterId: String) -> String? {
         switch adapterId {
         case "claude": return "처음 쓰기 좋음"
+        case "gemini": return "무료 tier 있음"
         default: return nil
         }
     }

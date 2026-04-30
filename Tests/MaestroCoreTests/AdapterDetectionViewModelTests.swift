@@ -33,7 +33,36 @@ final class AdapterDetectionViewModelTests: XCTestCase {
     func testInstallationHintReturnsKnownCommandsForKnownAdapters() {
         XCTAssertNotNil(AdapterDetectionViewModel.installationHint(for: "claude"))
         XCTAssertNotNil(AdapterDetectionViewModel.installationHint(for: "aider"))
+        // v0.9.0
+        XCTAssertNotNil(AdapterDetectionViewModel.installationHint(for: "codex"))
+        XCTAssertNotNil(AdapterDetectionViewModel.installationHint(for: "gemini"))
         XCTAssertNil(AdapterDetectionViewModel.installationHint(for: "unknown-vendor"))
+    }
+
+    func testCodexInstallationHintHasCorrectCommand() {
+        let hint = AdapterDetectionViewModel.installationHint(for: "codex")
+        XCTAssertEqual(hint?.command, "npm install -g @openai/codex")
+        XCTAssertNotNil(hint?.docsURL)
+    }
+
+    func testGeminiInstallationHintHasCorrectCommand() {
+        let hint = AdapterDetectionViewModel.installationHint(for: "gemini")
+        XCTAssertEqual(hint?.command, "npm install -g @google/gemini-cli")
+        XCTAssertNotNil(hint?.docsURL)
+    }
+
+    func testDescriptionsForKnownAdapters() {
+        XCTAssertNotNil(AdapterDetectionViewModel.description(for: "claude"))
+        XCTAssertNotNil(AdapterDetectionViewModel.description(for: "aider"))
+        XCTAssertNotNil(AdapterDetectionViewModel.description(for: "codex"))
+        XCTAssertNotNil(AdapterDetectionViewModel.description(for: "gemini"))
+    }
+
+    func testGeminiHasFreeBadge() {
+        XCTAssertEqual(
+            AdapterDetectionViewModel.recommendationBadge(for: "gemini"),
+            "무료 tier 있음"
+        )
     }
 
     func testSortedAdapterIDsIsAlphabetical() async throws {

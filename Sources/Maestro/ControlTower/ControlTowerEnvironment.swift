@@ -175,6 +175,9 @@ public final class ControlTowerEnvironment {
             map[ClaudeAdapter.id] = claude
         }
         if let aider = try? AiderAdapter() { map[AiderAdapter.id] = aider }
+        // v0.9.0 — Codex (OpenAI) + Gemini (Google) 어댑터 등록.
+        if let codex = try? CodexAdapter() { map[CodexAdapter.id] = codex }
+        if let gemini = try? GeminiAdapter() { map[GeminiAdapter.id] = gemini }
         return map
     }
 

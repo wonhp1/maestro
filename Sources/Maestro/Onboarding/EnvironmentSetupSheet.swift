@@ -41,6 +41,11 @@ struct EnvironmentSetupSheet: View {
             statusRow(label: "Node.js", status: status.node)
             statusRow(label: "Claude Code", status: status.claude)
             statusRow(label: "Anthropic 로그인", status: status.claudeAuth)
+            // v0.9.0 — Codex / Gemini (모두 선택)
+            statusRow(label: "Codex (OpenAI, 선택)", status: status.codex, optional: true)
+            statusRow(label: "Codex 로그인 (선택)", status: status.codexAuth, optional: true)
+            statusRow(label: "Gemini (Google, 선택)", status: status.gemini, optional: true)
+            statusRow(label: "Gemini 로그인 (선택)", status: status.geminiAuth, optional: true)
             statusRow(label: "git (선택)", status: status.git, optional: true)
         }
         .font(.callout)
@@ -51,6 +56,31 @@ struct EnvironmentSetupSheet: View {
             Label("Claude 사용에 필요한 환경이 준비됐습니다", systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
                 .font(.callout)
+            // v0.9.0 — Codex / Gemini 도 선택적 자동 설치 가능.
+            optionalAdapterActions(status: status)
+        }
+    }
+
+    /// v0.9.0 — Claude 준비 끝났더라도 Codex/Gemini 선택 설치 옵션 노출.
+    @ViewBuilder
+    private func optionalAdapterActions(status: EnvironmentStatus) -> some View {
+        HStack(spacing: 8) {
+            if !status.codex.isReady {
+                Button {
+                    Task { await viewModel.installCodex() }
+                } label: {
+                    Label("Codex 설치", systemImage: "cpu")
+                }
+                .help("OpenAI Codex CLI 를 npm 으로 설치합니다.")
+            }
+            if !status.gemini.isReady {
+                Button {
+                    Task { await viewModel.installGemini() }
+                } label: {
+                    Label("Gemini 설치", systemImage: "sparkle.magnifyingglass")
+                }
+                .help("Google Gemini CLI 를 npm 으로 설치합니다.")
+            }
         }
     }
 

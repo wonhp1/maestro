@@ -115,6 +115,32 @@ public final class EnvironmentSetupViewModel {
         await scan()
     }
 
+    /// v0.9.0 — Codex CLI 단독 설치 (Claude 와 별개).
+    public func installCodex() async {
+        lastError = nil
+        do {
+            try await runInstallStage { try await installer.installCodex(progress: $0) }
+        } catch let err as EnvironmentInstallerError {
+            lastError = humanizeError(err)
+        } catch {
+            lastError = "Codex 설치 실패: \(error.localizedDescription)"
+        }
+        await scan()
+    }
+
+    /// v0.9.0 — Gemini CLI 단독 설치 (Claude 와 별개).
+    public func installGemini() async {
+        lastError = nil
+        do {
+            try await runInstallStage { try await installer.installGemini(progress: $0) }
+        } catch let err as EnvironmentInstallerError {
+            lastError = humanizeError(err)
+        } catch {
+            lastError = "Gemini 설치 실패: \(error.localizedDescription)"
+        }
+        await scan()
+    }
+
     /// git 다운로드 페이지 열기 — 자동 설치 X (외부 링크).
     public func openGitDownloadPage() {
         let url = URL(string: "https://git-scm.com/download/mac")!

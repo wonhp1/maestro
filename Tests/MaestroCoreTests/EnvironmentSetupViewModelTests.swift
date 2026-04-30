@@ -235,6 +235,63 @@ final class EnvironmentSetupViewModelTests: XCTestCase {
         }
     }
 
+    // MARK: - v0.9.0 — installCodex / installGemini
+
+    func testInstallCodexSuccess() async throws {
+        let home = try makeTempHome(authPresent: false)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checker = makeChecker(homeDir: home)
+        let installer = EnvironmentInstaller(
+            adapterInstall: { id in
+                XCTAssertEqual(id, "codex")
+                return .success(stdoutTail: "added 2 packages")
+            }
+        )
+        let vm = EnvironmentSetupViewModel(checker: checker, installer: installer)
+        await vm.installCodex()
+        XCTAssertNil(vm.lastError)
+    }
+
+    func testInstallCodexFailureSetsLastError() async throws {
+        let home = try makeTempHome(authPresent: false)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checker = makeChecker(homeDir: home)
+        let installer = EnvironmentInstaller(
+            adapterInstall: { _ in .failed(exitCode: 1, stderr: "ENOENT") }
+        )
+        let vm = EnvironmentSetupViewModel(checker: checker, installer: installer)
+        await vm.installCodex()
+        XCTAssertNotNil(vm.lastError)
+        XCTAssertTrue(vm.lastError?.contains("설치 실패") == true)
+    }
+
+    func testInstallGeminiSuccess() async throws {
+        let home = try makeTempHome(authPresent: false)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checker = makeChecker(homeDir: home)
+        let installer = EnvironmentInstaller(
+            adapterInstall: { id in
+                XCTAssertEqual(id, "gemini")
+                return .success(stdoutTail: "added 2 packages")
+            }
+        )
+        let vm = EnvironmentSetupViewModel(checker: checker, installer: installer)
+        await vm.installGemini()
+        XCTAssertNil(vm.lastError)
+    }
+
+    func testInstallGeminiFailureSetsLastError() async throws {
+        let home = try makeTempHome(authPresent: false)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let checker = makeChecker(homeDir: home)
+        let installer = EnvironmentInstaller(
+            adapterInstall: { _ in .failed(exitCode: 2, stderr: "network") }
+        )
+        let vm = EnvironmentSetupViewModel(checker: checker, installer: installer)
+        await vm.installGemini()
+        XCTAssertNotNil(vm.lastError)
+    }
+
     // MARK: - status callback
 
     /// VM 의 onStatusChange 콜백이 scan 완료마다 호출되는지.

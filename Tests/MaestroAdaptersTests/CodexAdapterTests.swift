@@ -1,10 +1,11 @@
+// swiftlint:disable file_length
 import Foundation
 @testable import MaestroAdapters
 @testable import MaestroCore
 import XCTest
 
-/// v0.9.0 Phase 2A — CodexAdapter skeleton 검증.
-/// (Phase 2B 에서 sendMessage / streamMessage tests 추가 예정)
+// v0.9.0 Phase 2A-C — CodexAdapter (skeleton + sendMessage + streaming).
+// swiftlint:disable:next type_body_length
 final class CodexAdapterTests: XCTestCase {
     private var tempDir: URL!
 
@@ -285,6 +286,129 @@ final class CodexAdapterTests: XCTestCase {
         XCTAssertTrue(initialized)
     }
 
+    // MARK: - streamMessage (Phase 2C)
+
+    func testStreamMessageEmitsTextAndCompletion() async throws {
+        let lines = [
+            #"{"type":"thread.started","thread_id":"tid-stream"}"#,
+            #"{"type":"turn.started"}"#,
+            #"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello world"}}"#,
+            #"{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0}}"#,
+        ]
+        let streamer = ScriptedStreamer(stdoutLines: lines, exitCode: 0)
+        let adapter = try makeAdapter(streamer: streamer)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        var chunks: [ResponseChunk] = []
+        for try await chunk in adapter.streamMessage(makeEnvelope(body: "hi"), in: session) {
+            chunks.append(chunk)
+        }
+        let texts = chunks.filter { $0.kind == .text }.map(\.content)
+        XCTAssertEqual(texts, ["hello world"])
+        XCTAssertEqual(chunks.last?.kind, .completion)
+        // thread_id 캡처
+        let captured = await adapter.threadId(for: session.id)
+        XCTAssertEqual(captured, "tid-stream")
+    }
+
+    func testStreamMessageEmitsToolUseAndResult() async throws {
+        let lines = [
+            #"{"type":"thread.started","thread_id":"tid-tool"}"#,
+            #"{"type":"turn.started"}"#,
+            #"{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"ls","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#,
+            #"{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"ls","aggregated_output":"a.txt\nb.txt","exit_code":0,"status":"completed"}}"#,
+            #"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Found 2 files."}}"#,
+            #"{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":3,"reasoning_output_tokens":0}}"#,
+        ]
+        let streamer = ScriptedStreamer(stdoutLines: lines, exitCode: 0)
+        let adapter = try makeAdapter(streamer: streamer)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        var chunks: [ResponseChunk] = []
+        for try await chunk in adapter.streamMessage(makeEnvelope(body: "ls"), in: session) {
+            chunks.append(chunk)
+        }
+        let kinds = chunks.map(\.kind)
+        XCTAssertEqual(kinds, [.toolUse, .toolResult, .text, .completion])
+        // tool_use 의 command 확인
+        let toolUseContent = chunks.first(where: { $0.kind == .toolUse })?.content ?? ""
+        XCTAssertTrue(toolUseContent.contains("\"command\":\"ls\""))
+        XCTAssertTrue(toolUseContent.contains("\"status\":\"in_progress\""))
+        // tool_result 의 output 확인
+        let toolResultContent = chunks.first(where: { $0.kind == .toolResult })?.content ?? ""
+        XCTAssertTrue(toolResultContent.contains("\"output\":\"a.txt\\nb.txt\""))
+        XCTAssertTrue(toolResultContent.contains("\"exit_code\":0"))
+    }
+
+    func testStreamMessageThrowsOnTurnFailed() async throws {
+        let lines = [
+            #"{"type":"thread.started","thread_id":"x"}"#,
+            #"{"type":"turn.started"}"#,
+            #"{"type":"turn.failed","error":{"message":"401 Unauthorized"}}"#,
+        ]
+        let streamer = ScriptedStreamer(stdoutLines: lines, exitCode: 0)
+        let adapter = try makeAdapter(streamer: streamer)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        do {
+            for try await _ in adapter.streamMessage(makeEnvelope(body: "x"), in: session) {}
+            XCTFail("expected throw")
+        } catch let err as CodexResponseError {
+            if case .codexReportedError(let msg) = err {
+                XCTAssertTrue(msg.contains("401"))
+            } else { XCTFail("wrong: \(err)") }
+        }
+    }
+
+    func testStreamMessageThrowsOnNonZeroExit() async throws {
+        let streamer = ScriptedStreamer(
+            stdoutLines: [],
+            stderrLines: ["fatal: rate limit exceeded"],
+            exitCode: 1
+        )
+        let adapter = try makeAdapter(streamer: streamer)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        do {
+            for try await _ in adapter.streamMessage(makeEnvelope(body: "x"), in: session) {}
+            XCTFail("expected processFailed")
+        } catch let err as AdapterError {
+            if case .processFailed(let code, let stderr) = err {
+                XCTAssertEqual(code, 1)
+                XCTAssertTrue(stderr.contains("rate limit"))
+            } else { XCTFail("wrong: \(err)") }
+        }
+    }
+
+    func testStreamMessageIgnoresNonJSONLines() async throws {
+        let lines = [
+            "Reading additional input from stdin...",  // 비-JSON
+            #"{"type":"thread.started","thread_id":"x"}"#,
+            "some random log line",
+            #"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}"#,
+            #"{"type":"turn.completed","usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0}}"#,
+        ]
+        let streamer = ScriptedStreamer(stdoutLines: lines, exitCode: 0)
+        let adapter = try makeAdapter(streamer: streamer)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        var chunks: [ResponseChunk] = []
+        for try await chunk in adapter.streamMessage(makeEnvelope(body: "x"), in: session) {
+            chunks.append(chunk)
+        }
+        let texts = chunks.filter { $0.kind == .text }.map(\.content)
+        XCTAssertEqual(texts, ["ok"])
+    }
+
+    func testStreamMessageMarksSessionInitialized() async throws {
+        let lines = [
+            #"{"type":"thread.started","thread_id":"abc"}"#,
+            #"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hi"}}"#,
+            #"{"type":"turn.completed","usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0}}"#,
+        ]
+        let streamer = ScriptedStreamer(stdoutLines: lines, exitCode: 0)
+        let adapter = try makeAdapter(streamer: streamer)
+        let session = try await adapter.createSession(folderPath: tempDir)
+        for try await _ in adapter.streamMessage(makeEnvelope(body: "x"), in: session) {}
+        let initialized = await adapter.isInitialized(session.id)
+        XCTAssertTrue(initialized)
+    }
+
     func testListSlashCommandsReturnsEmptyInPhase2A() async throws {
         let adapter = try makeAdapter()
         let session = try await adapter.createSession(folderPath: tempDir)
@@ -302,6 +426,7 @@ final class CodexAdapterTests: XCTestCase {
 
     private func makeAdapter(
         executor: any ProcessExecuting = NullExecutor(),
+        streamer: any ProcessStreaming = EmptyCodexStreamer(),
         executableExists: Bool = true
     ) throws -> CodexAdapter {
         let detector = CLIDetector(
@@ -310,7 +435,7 @@ final class CodexAdapterTests: XCTestCase {
             ),
             executor: CodexDetectExecutor()
         )
-        return try CodexAdapter(executor: executor, detector: detector)
+        return try CodexAdapter(executor: executor, streamer: streamer, detector: detector)
     }
 
     /// 캡처된 실제 Codex stdout JSONL 모방.
@@ -375,6 +500,52 @@ private struct NullExecutor: ProcessExecuting {
         environment: [String: String]?
     ) async throws -> ProcessOutput {
         ProcessOutput(stdout: "", stderr: "", exitCode: 0)
+    }
+}
+
+private struct EmptyCodexStreamer: ProcessStreaming {
+    func stream(
+        executable: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?,
+        environment: [String: String]?
+    ) -> AsyncThrowingStream<ProcessStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(ProcessStreamEvent(kind: .exited(exitCode: 0, reason: .exit)))
+            continuation.finish()
+        }
+    }
+}
+
+private struct ScriptedStreamer: ProcessStreaming {
+    let stdoutLines: [String]
+    var stderrLines: [String] = []
+    let exitCode: Int32
+
+    init(stdoutLines: [String], stderrLines: [String] = [], exitCode: Int32 = 0) {
+        self.stdoutLines = stdoutLines
+        self.stderrLines = stderrLines
+        self.exitCode = exitCode
+    }
+
+    func stream(
+        executable: URL,
+        arguments: [String],
+        currentDirectoryURL: URL?,
+        environment: [String: String]?
+    ) -> AsyncThrowingStream<ProcessStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            for line in stdoutLines {
+                continuation.yield(ProcessStreamEvent(kind: .stdoutLine(line)))
+            }
+            for line in stderrLines {
+                continuation.yield(ProcessStreamEvent(kind: .stderrLine(line)))
+            }
+            continuation.yield(
+                ProcessStreamEvent(kind: .exited(exitCode: exitCode, reason: .exit))
+            )
+            continuation.finish()
+        }
     }
 }
 

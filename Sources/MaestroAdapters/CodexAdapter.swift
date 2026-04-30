@@ -180,6 +180,29 @@ public actor CodexAdapter: AgentAdapter {
         )
     }
 
+    /// v0.9.0 Phase 2C — Codex 스트리밍. JSONL 라인 단위로 파싱 → ResponseChunk 발행.
+    ///
+    /// Codex 의 `agent_message` 는 chunk 단위 X — 완성된 메시지 한 번에 옴
+    /// (Claude 의 delta 와 다름). UI 가 받는 순간 전체 표시.
+    /// `command_execution` 은 in_progress → completed 두 단계로 와서 tool 사용
+    /// 진행 상태를 UI 에 보여줄 수 있음.
+    nonisolated public func streamMessage(
+        _ envelope: MessageEnvelope,
+        in session: Session
+    ) -> AsyncThrowingStream<ResponseChunk, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await self.driveStream(envelope, in: session, continuation: continuation)
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     /// Phase 2D 에서 구현 — 현재는 빈 배열.
     public func listSlashCommands(in session: Session) async -> [SlashCommand] {
         []
@@ -214,6 +237,84 @@ public actor CodexAdapter: AgentAdapter {
     }
 
     // MARK: - Private helpers
+
+    /// streaming 본문 — JSONL 라인별 ResponseChunk 변환.
+    private func driveStream(
+        _ envelope: MessageEnvelope,
+        in session: Session,
+        continuation: AsyncThrowingStream<ResponseChunk, Error>.Continuation
+    ) async throws {
+        let resolved = try await resolveExecutable()
+        let arguments = buildArguments(prompt: envelope.body, session: session)
+        let env = sanitizer.sanitize(ProcessInfo.processInfo.environment)
+        let stream = streamer.stream(
+            executable: resolved,
+            arguments: arguments,
+            currentDirectoryURL: session.folderPath,
+            environment: env
+        )
+        var stderrSnippet = ""
+        var sawAnyOutput = false
+        for try await event in stream {
+            try await handleStreamEvent(
+                event,
+                session: session,
+                sawAnyOutput: &sawAnyOutput,
+                stderrSnippet: &stderrSnippet,
+                continuation: continuation
+            )
+        }
+    }
+
+    /// `driveStream` 의 라인별 분기를 분리 (cyclomatic complexity 완화).
+    private func handleStreamEvent(
+        _ event: ProcessStreamEvent,
+        session: Session,
+        sawAnyOutput: inout Bool,
+        stderrSnippet: inout String,
+        continuation: AsyncThrowingStream<ResponseChunk, Error>.Continuation
+    ) async throws {
+        switch event.kind {
+        case .stdoutLine(let line):
+            if !sawAnyOutput {
+                sawAnyOutput = true
+                initializedSessions.insert(session.id)
+            }
+            try processStdoutLine(line, session: session, continuation: continuation)
+        case .stderrLine(let line):
+            logger.warning("codex stderr")
+            if stderrSnippet.utf8.count < 1024 {
+                stderrSnippet += line + "\n"
+            }
+        case .exited(let code, _):
+            if code != 0 {
+                invalidateDetectionCache()
+                throw AdapterError.processFailed(exitCode: code, stderr: stderrSnippet)
+            }
+        }
+    }
+
+    /// stdout 한 줄 → CodexStreamEvent 파싱 + 부수효과 (thread_id 캡처, error throw,
+    /// chunk 발행).
+    private func processStdoutLine(
+        _ line: String,
+        session: Session,
+        continuation: AsyncThrowingStream<ResponseChunk, Error>.Continuation
+    ) throws {
+        guard let parsed = CodexStreamParser.parse(line: line) else { return }
+        if parsed.type == "thread.started", let threadId = parsed.threadId {
+            threadIds[session.id] = threadId
+        }
+        if parsed.type == "turn.failed", let msg = parsed.error?.message {
+            throw CodexResponseError.codexReportedError(message: msg)
+        }
+        if parsed.type == "error", let msg = parsed.message {
+            throw CodexResponseError.codexReportedError(message: msg)
+        }
+        for chunk in CodexStreamParser.chunks(from: parsed) {
+            continuation.yield(chunk)
+        }
+    }
 
     /// detect → executablePath. 미설치 시 throw.
     private func resolveExecutable() async throws -> URL {

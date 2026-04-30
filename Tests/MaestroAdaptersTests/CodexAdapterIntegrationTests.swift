@@ -49,6 +49,28 @@ final class CodexAdapterIntegrationTests: XCTestCase {
         XCTAssertTrue(initialized)
     }
 
+    /// Phase 2C — 실제 Codex 로 streaming 동작 확인.
+    func testRealCodexStreamMessage() async throws {
+        try skipIfCodexUnavailable()
+
+        let adapter = try CodexAdapter()
+        let session = try await adapter.createSession(folderPath: tempDir)
+        let env = MessageEnvelope.task(
+            from: try AgentID.validated(rawValue: "user"),
+            to: try AgentID.validated(rawValue: "codex"),
+            body: "Reply with exactly 'streamed-ok'"
+        )
+
+        var chunks: [ResponseChunk] = []
+        for try await chunk in adapter.streamMessage(env, in: session) {
+            chunks.append(chunk)
+        }
+        // 최소 한 개 text + 마지막 completion
+        let texts = chunks.filter { $0.kind == .text }.map(\.content).joined()
+        XCTAssertFalse(texts.isEmpty, "streaming text 비어있음")
+        XCTAssertEqual(chunks.last?.kind, .completion)
+    }
+
     /// 같은 세션 두 번째 호출이 resume 동작 + 같은 thread_id 유지 확인.
     /// 컨텍스트 의존 prompt 는 tool 호출 트리거 가능 (workspace-write sandbox) 로
     /// 시간 변동 큼 → 단순 echo prompt 로 thread_id 보존만 검증.

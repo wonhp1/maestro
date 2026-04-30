@@ -132,6 +132,59 @@ public enum CodexStreamParser {
         }
         return nil
     }
+
+    /// v0.9.0 Phase 2C — 단일 event → UI 가 보여줄 ResponseChunk 배열.
+    /// 한 event 가 0~N 개 chunk 생성 가능 (대부분 0 or 1).
+    ///
+    /// - `thread.started` / `turn.started` → 빈 배열 (UI 표시 X)
+    /// - `item.started` (command_execution) → toolUse chunk (실행 중인 명령)
+    /// - `item.completed` (command_execution) → toolResult chunk (출력 + exit code)
+    /// - `item.completed` (agent_message) → text chunk
+    /// - `turn.completed` → completion chunk
+    /// - `error` / `turn.failed` → 빈 배열 (호출자가 throw 처리)
+    public static func chunks(from event: CodexStreamEvent) -> [ResponseChunk] {
+        switch event.type {
+        case "item.started":
+            guard let item = event.item, item.type == "command_execution",
+                  let cmd = item.command else { return [] }
+            // toolUse JSON: {"command": "...", "status": "in_progress"}
+            let payload = """
+                {"command":\(jsonString(cmd)),"status":"in_progress"}
+                """
+            return [ResponseChunk(kind: .toolUse, content: payload)]
+        case "item.completed":
+            guard let item = event.item else { return [] }
+            switch item.type {
+            case "agent_message":
+                guard let text = item.text else { return [] }
+                return [ResponseChunk.text(text)]
+            case "command_execution":
+                let output = item.aggregatedOutput ?? ""
+                let exitCode = item.exitCode.map(String.init) ?? "?"
+                let payload = """
+                    {"output":\(jsonString(output)),"exit_code":\(exitCode)}
+                    """
+                return [ResponseChunk(kind: .toolResult, content: payload)]
+            default:
+                return []
+            }
+        case "turn.completed":
+            return [ResponseChunk.completion()]
+        default:
+            return []
+        }
+    }
+
+    /// JSON string literal 생성 — escape 처리.
+    private static func jsonString(_ s: String) -> String {
+        let escaped = s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
+        return "\"\(escaped)\""
+    }
 }
 
 /// CodexAdapter 가 throw 하는 Codex 특화 에러.

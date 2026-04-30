@@ -1,3 +1,4 @@
+import AppKit
 import MaestroCore
 import SwiftUI
 
@@ -320,9 +321,14 @@ struct VendorPickerSheet: View {
         case .cancelled:
             loginMessage[adapterId] = "로그인 취소됨"
         case .timedOut:
-            loginMessage[adapterId] = "5분 내 로그인 안 됨. 다시 시도해주세요."
+            loginMessage[adapterId] = "5분 내 로그인 안 됨. 기존 브라우저 탭은 닫고 다시 시도하세요."
         case .processFailed(let m):
             loginMessage[adapterId] = "실패: \(m)"
+        case .browserOpenFailed(let url):
+            // v0.9.8: 브라우저 자동 오픈 실패 — URL 클립보드 복사 + 사용자 수동 안내.
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            loginMessage[adapterId] = "브라우저를 열 수 없습니다. URL 을 클립보드에 복사했어요 — 직접 붙여넣어 로그인하세요."
         }
     }
 

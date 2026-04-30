@@ -73,7 +73,11 @@ public actor AdapterSelector {
     /// v0.9.6: ChatFactory 가 enabled 셋을 하드코딩 ["claude","aider"] 했더니
     /// codex/gemini 폴더가 항상 claude 로 dispatch 되던 회귀가 있었음. 회귀 방지:
     /// 호출자가 이 메서드로 셋을 가져가면 새 어댑터가 추가되어도 자동 반영.
-    public func allCandidateIDs() -> Set<String> {
+    ///
+    /// v0.9.8: `nonisolated` — `candidates` 는 immutable `let` 이므로 actor hop
+    /// 불필요. ChatFactory 의 await selector.allCandidateIDs() → await selector.select()
+    /// 이중 hop 제거.
+    nonisolated public func allCandidateIDs() -> Set<String> {
         Set(candidates.keys)
     }
 }

@@ -21,7 +21,14 @@ public enum InteractiveAuthHelper {
         case cancelled
         case timedOut
         case processFailed(message: String)
+        /// v0.9.8: 브라우저 자동 오픈 실패 — 사용자가 수동으로 URL 방문 필요.
+        case browserOpenFailed(url: URL)
     }
+
+    /// 매직 상수.
+    private static let urlPattern = #"https://[^\s)]+"#
+    private static let errorTailLength = 200
+    private static let oauthHostHints = ["oauth", "accounts.google.com", "auth.openai.com"]
 
     /// `codex login` spawn → URL 추출 + 브라우저 오픈 → polling.
     public static func loginCodex(
@@ -127,8 +134,13 @@ public enum InteractiveAuthHelper {
             }
             // OAuth URL 자동 오픈 (한 번만) — Codex 백업 경로. Gemini 는 URL 안 찍음.
             if !openedURL, let url = Self.extractOAuthURL(from: accumulator.snapshot()) {
-                await MainActor.run { _ = NSWorkspace.shared.open(url) }
+                let opened = await MainActor.run { NSWorkspace.shared.open(url) }
                 openedURL = true
+                if !opened {
+                    // v0.9.8: 브라우저 오픈 실패 — 5분 대기 대신 즉시 사용자에게 알림.
+                    terminateIfRunning(process)
+                    return .browserOpenFailed(url: url)
+                }
             }
             if await authCheck() {
                 terminateIfRunning(process)
@@ -140,8 +152,9 @@ public enum InteractiveAuthHelper {
                     return .cancelled
                 }
                 let snapshot = accumulator.snapshot()
+                let cliName = executable.lastPathComponent
                 return .processFailed(
-                    message: "exit \(exitCode): \(snapshot.suffix(200))"
+                    message: "\(cliName) exit \(exitCode): \(snapshot.suffix(errorTailLength))"
                 )
             }
         }
@@ -153,25 +166,19 @@ public enum InteractiveAuthHelper {
     /// Codex: `https://auth.openai.com/oauth/authorize?...`
     /// Gemini: URL 안 찍어서 사용 안 함 (Gemini 가 직접 브라우저 오픈).
     static func extractOAuthURL(from text: String) -> URL? {
-        let pattern = #"https://[^\s)]+"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = try? NSRegularExpression(pattern: urlPattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
-        let matches = regex.matches(in: text, range: range)
-        for match in matches {
+        var fallback: String?
+        // v0.9.8: 단일 패스 — OAuth 패턴 발견 시 즉시 반환, 없으면 첫 https 를 fallback 으로 보존.
+        for match in regex.matches(in: text, range: range) {
             guard let r = Range(match.range, in: text) else { continue }
             let candidate = String(text[r])
-            // OAuth 패턴 우선 (auth.openai.com 또는 accounts.google.com)
-            if candidate.contains("oauth") || candidate.contains("accounts.google.com")
-                || candidate.contains("auth.openai.com") {
+            if oauthHostHints.contains(where: candidate.contains) {
                 return URL(string: candidate)
             }
+            if fallback == nil { fallback = candidate }
         }
-        // OAuth 패턴 없으면 첫 번째 https URL
-        if let first = matches.first,
-           let r = Range(first.range, in: text) {
-            return URL(string: String(text[r]))
-        }
-        return nil
+        return fallback.flatMap(URL.init(string:))
     }
 
     private static func terminateIfRunning(_ process: Process) {

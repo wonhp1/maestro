@@ -3,6 +3,27 @@
 모든 사용자 가시 변경. 버전 형식 [SemVer](https://semver.org/spec/v2.0.0.html), 배포는
 GitHub Actions release workflow 자동화 (코드 서명 + 노타리 + DMG).
 
+## [0.9.8] — 2026-05-01
+
+### Added
+
+- `LoginResult.browserOpenFailed(url:)` — 브라우저 자동 오픈 실패 시 사용자에게
+  즉시 알림 + 클립보드에 OAuth URL 자동 복사. 기존엔 silent 5분 대기 후
+  타임아웃만 표시되던 문제 해결.
+- 시나리오 doc `docs/qa-reports/scenarios/S17-inapp-oauth-login.md` — Codex / Gemini
+  인앱 OAuth 흐름 + 에러 케이스 정리.
+
+### Changed
+
+- `AdapterSelector.allCandidateIDs()` 를 `nonisolated` 로 변경 — `candidates` 가
+  immutable `let` 이라 actor hop 불필요. ChatFactory 의 이중 await 제거.
+- `extractOAuthURL` 단일 패스 리팩터 + 매직 상수 명명 (`urlPattern`,
+  `errorTailLength`, `oauthHostHints`).
+- 에러 메시지에 CLI 이름 prefix (예: `codex exit 1: ...`) — 어떤 어댑터가 실패했는지
+  명확히 구분.
+- 타임아웃 메시지에 "기존 브라우저 탭은 닫고 다시 시도하세요" 추가 — stale tab
+  안내 누락 회귀 방지.
+
 ## [0.9.7] — 2026-05-01
 
 ### Changed

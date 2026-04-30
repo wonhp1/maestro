@@ -1,15 +1,19 @@
 import AppKit
 import Foundation
 
-/// v0.9.4 — 인앱 OAuth 로그인 도우미.
+/// v0.9.5 — 인앱 OAuth 로그인 도우미.
 ///
-/// CLI subprocess 가 자동 브라우저 오픈 시도하지만, Pipe 로 stdout/stderr 캡처
-/// 되면 자동 오픈이 작동 안 함. 해결: subprocess output 에서 OAuth URL 추출 →
-/// `NSWorkspace.shared.open(url)` 로 직접 브라우저 호출.
+/// 두 CLI 의 행동이 다름:
+/// - **Codex**: `codex login` 이 stdout 에 OAuth URL 출력 + 자체 브라우저 오픈 시도.
+///   파이프 캡처 시 자체 오픈이 실패할 수 있어 Maestro 가 URL 추출해서
+///   `NSWorkspace.shared.open(url)` 백업.
+/// - **Gemini**: `gemini -p` 가 URL 안 찍고 interactive prompt
+///   `Do you want to continue? [Y/n]:` 띄움. stdin 으로 `Y\n` 보내야
+///   Gemini 가 직접 브라우저 오픈.
 ///
 /// 사용자 경험:
 /// 1. Maestro 의 "로그인" 버튼 클릭
-/// 2. 브라우저 자동 열림 (Maestro 가 URL 파싱해서 직접 호출)
+/// 2. 브라우저 자동 열림
 /// 3. 로그인 후 Maestro 가 polling 해서 자동 갱신
 public enum InteractiveAuthHelper {
     public enum LoginResult: Sendable, Equatable {
@@ -29,14 +33,15 @@ public enum InteractiveAuthHelper {
         await runOAuthSubprocess(
             executable: codexPath,
             arguments: ["login"],
+            initialStdin: nil,
             authCheck: { await checker.checkCodexAuth().isReady },
             pollInterval: pollInterval,
             timeout: timeout
         )
     }
 
-    /// `gemini -p "ping" --yolo --skip-trust` spawn → URL 추출 + 브라우저 오픈 → polling.
-    /// Gemini 는 별도 login 명령 없음 — 첫 prompt 호출 시 OAuth 자동 트리거.
+    /// `gemini -p "ping" --yolo --skip-trust` spawn → stdin 에 Y\n → Gemini 가 브라우저 오픈 → polling.
+    /// Gemini 는 별도 login 명령 없음 — 첫 prompt 호출 시 OAuth interactive prompt 트리거.
     public static func loginGemini(
         geminiPath: URL,
         checker: EnvironmentChecker = EnvironmentChecker(),
@@ -46,6 +51,7 @@ public enum InteractiveAuthHelper {
         await runOAuthSubprocess(
             executable: geminiPath,
             arguments: ["-p", "ping", "--yolo", "--skip-trust"],
+            initialStdin: "Y\n",
             authCheck: { await checker.checkGeminiAuth().isReady },
             pollInterval: pollInterval,
             timeout: timeout
@@ -55,10 +61,11 @@ public enum InteractiveAuthHelper {
     // MARK: - Private
 
     // 공통 OAuth subprocess 실행 + output 모니터링 + URL 자동 오픈.
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity function_parameter_count
     private static func runOAuthSubprocess(
         executable: URL,
         arguments: [String],
+        initialStdin: String?,
         authCheck: @escaping @Sendable () async -> Bool,
         pollInterval: TimeInterval,
         timeout: TimeInterval
@@ -70,6 +77,8 @@ public enum InteractiveAuthHelper {
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        let inputPipe: Pipe? = initialStdin != nil ? Pipe() : nil
+        if let inputPipe { process.standardInput = inputPipe }
 
         // stdout / stderr 누적 — 비동기 readabilityHandler.
         let accumulator = OutputAccumulator()
@@ -96,6 +105,12 @@ public enum InteractiveAuthHelper {
             return .processFailed(message: "실행 실패: \(error.localizedDescription)")
         }
 
+        // 일부 CLI (Gemini) 는 prompt 출력 후 stdin 응답 대기 — 미리 Y\n 주입.
+        if let inputPipe, let payload = initialStdin?.data(using: .utf8) {
+            try? inputPipe.fileHandleForWriting.write(contentsOf: payload)
+            try? inputPipe.fileHandleForWriting.close()
+        }
+
         var openedURL = false
         let deadline = Date().addingTimeInterval(timeout)
         let pollNanos = UInt64(pollInterval * 1_000_000_000)
@@ -110,7 +125,7 @@ public enum InteractiveAuthHelper {
                 terminateIfRunning(process)
                 return .cancelled
             }
-            // OAuth URL 자동 오픈 (한 번만)
+            // OAuth URL 자동 오픈 (한 번만) — Codex 백업 경로. Gemini 는 URL 안 찍음.
             if !openedURL, let url = Self.extractOAuthURL(from: accumulator.snapshot()) {
                 await MainActor.run { _ = NSWorkspace.shared.open(url) }
                 openedURL = true
@@ -136,7 +151,7 @@ public enum InteractiveAuthHelper {
 
     /// stdout/stderr 에서 첫 OAuth URL 추출.
     /// Codex: `https://auth.openai.com/oauth/authorize?...`
-    /// Gemini: `https://accounts.google.com/o/oauth2/...`
+    /// Gemini: URL 안 찍어서 사용 안 함 (Gemini 가 직접 브라우저 오픈).
     static func extractOAuthURL(from text: String) -> URL? {
         let pattern = #"https://[^\s)]+"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }

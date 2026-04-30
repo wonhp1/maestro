@@ -61,10 +61,12 @@ public final class EnvironmentSetupViewModel {
         return !s.claudeReady
     }
 
-    /// 자동 설치 가능 도구 (Node, Claude, Aider) 중 누락된 게 있는지.
+    /// 자동 설치 가능 도구 (Node, Claude, Codex, Gemini) 중 누락된 게 있는지.
+    /// v0.9.0: Codex / Gemini 도 포함 — 사용자가 "환경 자동 설치" 버튼으로 모두 설치.
     public var hasInstallableMissing: Bool {
         guard let s = status else { return false }
         return !s.node.isReady || !s.claude.isReady
+            || !s.codex.isReady || !s.gemini.isReady
     }
 
     /// 환경 검사 시작. 결과를 phase 에 반영. lastError 는 의도적으로 보존 — install 실패
@@ -77,10 +79,12 @@ public final class EnvironmentSetupViewModel {
     }
 
     /// 누락된 install 가능 도구 자동 설치. 호출 후 자동 재검사.
-    /// - Parameter includeAider: Aider 도 함께 설치할지 (default false — Claude default 흐름).
+    /// v0.9.0 변경: Node + Claude + Codex + Gemini 모두 설치 (전부 npm 글로벌, sudo
+    /// 한 번 + 사용자가 한 번 클릭으로 4개 어댑터 환경 완성).
+    /// - Parameter includeAider: Aider 도 함께 설치할지 (default false — pip3 권한
+    ///   별도 + 정책상 선택). Codex/Gemini 는 npm 이라 default true 와 동일 동작.
     public func installMissing(includeAider: Bool = false) async {
-        // 평탄화 — guard fall-through 으로 재귀 제거. scan 후 ready 가 보장되지만
-        // 외부 race 로 다시 idle 이 됐다면 한 번만 더 시도하지 않고 종료.
+        // 평탄화 — guard fall-through.
         if case .idle = phase {
             await scan()
         }
@@ -95,6 +99,13 @@ public final class EnvironmentSetupViewModel {
             let afterNode = await checker.checkAll()
             if !afterNode.claude.isReady {
                 try await runInstallStage { try await installer.installClaude(progress: $0) }
+            }
+            // v0.9.0 — Codex / Gemini 도 default 로 함께 설치 (사용자 기대 부합).
+            if !afterNode.codex.isReady {
+                try await runInstallStage { try await installer.installCodex(progress: $0) }
+            }
+            if !afterNode.gemini.isReady {
+                try await runInstallStage { try await installer.installGemini(progress: $0) }
             }
             if includeAider, !afterNode.aider.isReady {
                 try await runInstallStage { try await installer.installAider(progress: $0) }

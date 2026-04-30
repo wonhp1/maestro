@@ -50,51 +50,35 @@ struct EnvironmentSetupSheet: View {
         }
         .font(.callout)
 
-        if !status.claudeReady {
+        // v0.9.0 — 4개 어댑터 (Claude/Codex/Gemini) 중 하나라도 누락 → 자동 설치 버튼.
+        let allReady = status.claude.isReady && status.codex.isReady && status.gemini.isReady
+        if !allReady {
             actionButtons(status: status)
         } else {
-            Label("Claude 사용에 필요한 환경이 준비됐습니다", systemImage: "checkmark.seal.fill")
+            Label("Claude / Codex / Gemini 모두 준비됐습니다", systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
                 .font(.callout)
-            // v0.9.0 — Codex / Gemini 도 선택적 자동 설치 가능.
-            optionalAdapterActions(status: status)
         }
     }
 
-    /// v0.9.0 — Claude 준비 끝났더라도 Codex/Gemini 선택 설치 옵션 노출.
-    @ViewBuilder
-    private func optionalAdapterActions(status: EnvironmentStatus) -> some View {
-        HStack(spacing: 8) {
-            if !status.codex.isReady {
-                Button {
-                    Task { await viewModel.installCodex() }
-                } label: {
-                    Label("Codex 설치", systemImage: "cpu")
-                }
-                .help("OpenAI Codex CLI 를 npm 으로 설치합니다.")
-            }
-            if !status.gemini.isReady {
-                Button {
-                    Task { await viewModel.installGemini() }
-                } label: {
-                    Label("Gemini 설치", systemImage: "sparkle.magnifyingglass")
-                }
-                .help("Google Gemini CLI 를 npm 으로 설치합니다.")
-            }
-        }
-    }
+    // v0.9.0 — optionalAdapterActions 제거. 이제 installMissing 이 Codex/Gemini
+    // 도 자동 설치하므로 별도 버튼 불필요.
 
     @ViewBuilder
     private func actionButtons(status: EnvironmentStatus) -> some View {
+        // v0.9.0 — 4개 어댑터 (Node + Claude + Codex + Gemini) 중 하나라도 누락이면
+        // 한 번 클릭으로 모두 설치. sudo 1회 + npm 글로벌 3개 설치.
+        let needsInstall = !status.node.isReady || !status.claude.isReady
+            || !status.codex.isReady || !status.gemini.isReady
         HStack(spacing: 8) {
-            if !status.node.isReady || !status.claude.isReady {
+            if needsInstall {
                 Button {
                     Task { await viewModel.installMissing() }
                 } label: {
                     Label("환경 자동 설치", systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.borderedProminent)
-                .help("Node.js 와 Claude Code 를 자동으로 설치합니다. 관리자 비밀번호가 필요합니다.")
+                .help("Node.js + Claude Code + Codex + Gemini 자동 설치. 관리자 비밀번호 1회.")
             }
             if status.node.isReady, status.claude.isReady, !status.claudeAuth.isReady {
                 claudeAuthGuide

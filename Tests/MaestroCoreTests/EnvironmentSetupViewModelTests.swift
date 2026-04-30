@@ -2,6 +2,7 @@
 import XCTest
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class EnvironmentSetupViewModelTests: XCTestCase {
     // MARK: - Stubs
 
@@ -235,6 +236,64 @@ final class EnvironmentSetupViewModelTests: XCTestCase {
         }
     }
 
+    // MARK: - v0.9.0 — installMissing 가 Codex/Gemini 도 설치 (bug fix)
+
+    /// 사용자 보고 버그: "환경 자동 설치" 클릭해도 Claude 만 설치되고 Codex/Gemini
+    /// 는 빠짐. installMissing 이 4개 모두 시도하는지 검증.
+    func testInstallMissingInstallsAllFourAdapters() async throws {
+        let home = try makeTempHome(authPresent: false)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        // 환경: node 설치돼있음 (binary 가짜) — claude/codex/gemini 만 누락 가정.
+        let executor = StubExecutor()
+        executor.responses["node"] = ProcessOutput(
+            stdout: "v22.11.0\n", stderr: "", exitCode: 0
+        )
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: ["node": URL(filePath: "/usr/local/bin/node")]),
+            executor: executor,
+            homeDirectory: home
+        )
+
+        // adapterInstall 호출 추적 — 어떤 어댑터들이 install 호출됐는지.
+        let installedIDs = AdapterInstallTracker()
+        let installer = EnvironmentInstaller(
+            adapterInstall: { id in
+                await installedIDs.record(id)
+                return .success(stdoutTail: "added 1 package")
+            }
+        )
+        let vm = EnvironmentSetupViewModel(checker: checker, installer: installer)
+        await vm.installMissing()
+        XCTAssertNil(vm.lastError)
+
+        let installs = await installedIDs.ids
+        XCTAssertTrue(installs.contains("claude"), "claude 설치 시도 안 됨")
+        XCTAssertTrue(installs.contains("codex"), "codex 설치 시도 안 됨 (bug 회귀)")
+        XCTAssertTrue(installs.contains("gemini"), "gemini 설치 시도 안 됨 (bug 회귀)")
+    }
+
+    /// `hasInstallableMissing` 도 Codex/Gemini 누락을 인식.
+    func testHasInstallableMissingDetectsCodexGemini() async throws {
+        let home = try makeTempHome(authPresent: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        // node + claude 만 있음, codex/gemini 누락
+        let executor = StubExecutor()
+        executor.responses["node"] = ProcessOutput(stdout: "v22.0.0\n", stderr: "", exitCode: 0)
+        executor.responses["claude"] = ProcessOutput(stdout: "1.0.0\n", stderr: "", exitCode: 0)
+        let checker = EnvironmentChecker(
+            locator: StubLocator(mapping: [
+                "node": URL(filePath: "/usr/local/bin/node"),
+                "claude": URL(filePath: "/usr/local/bin/claude"),
+            ]),
+            executor: executor,
+            homeDirectory: home
+        )
+        let vm = EnvironmentSetupViewModel(checker: checker, installer: EnvironmentInstaller())
+        await vm.scan()
+        XCTAssertTrue(vm.hasInstallableMissing, "codex/gemini 누락 인식해야 함")
+    }
+
     // MARK: - v0.9.0 — installCodex / installGemini
 
     func testInstallCodexSuccess() async throws {
@@ -317,6 +376,12 @@ final class EnvironmentSetupViewModelTests: XCTestCase {
     private final class StatusBox {
         private(set) var value: EnvironmentStatus?
         func set(_ s: EnvironmentStatus) { value = s }
+    }
+
+    /// v0.9.0 — adapterInstall 호출된 어댑터 ID 들 추적.
+    private actor AdapterInstallTracker {
+        private(set) var ids: [String] = []
+        func record(_ id: String) { ids.append(id) }
     }
 
     // MARK: - humanizeError full coverage

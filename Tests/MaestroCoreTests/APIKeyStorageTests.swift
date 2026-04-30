@@ -61,4 +61,25 @@ final class APIKeyStorageTests: XCTestCase {
         let key = try APIKeyStorage.makeKey(adapterID: "claude")
         XCTAssertEqual(key, "adapter:claude:apiKey")
     }
+
+    // MARK: - v0.9.0 — Codex / Gemini namespace 자동 지원 검증
+
+    func testCodexAndGeminiKeysSupportedAutomatically() throws {
+        try storage.setKey(for: "codex", value: "sk-openai-fake")
+        try storage.setKey(for: "gemini", value: "AIzaFakeGemini")
+        XCTAssertEqual(try storage.key(for: "codex"), "sk-openai-fake")
+        XCTAssertEqual(try storage.key(for: "gemini"), "AIzaFakeGemini")
+        // 모든 4개 어댑터 namespace 격리
+        try storage.setKey(for: "claude", value: "anthropic-key")
+        try storage.setKey(for: "aider", value: "aider-key")
+        XCTAssertEqual(try storage.key(for: "claude"), "anthropic-key")
+        XCTAssertEqual(try storage.key(for: "aider"), "aider-key")
+        XCTAssertEqual(try storage.key(for: "codex"), "sk-openai-fake")
+        XCTAssertEqual(try storage.key(for: "gemini"), "AIzaFakeGemini")
+    }
+
+    func testCodexGeminiNamespaceFormat() throws {
+        XCTAssertEqual(try APIKeyStorage.makeKey(adapterID: "codex"), "adapter:codex:apiKey")
+        XCTAssertEqual(try APIKeyStorage.makeKey(adapterID: "gemini"), "adapter:gemini:apiKey")
+    }
 }

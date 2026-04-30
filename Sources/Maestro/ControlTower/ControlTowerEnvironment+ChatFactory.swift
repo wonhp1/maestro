@@ -24,11 +24,8 @@ extension ControlTowerEnvironment {
                 )
                 return try ChatViewModel(adapter: ctrl, session: session)
             }
-            // 등록된 모든 candidate 를 enabled 로 — 새 어댑터 추가 시 자동 라우팅.
-            let adapter = await selector.select(
-                preferred: folder.adapterId.rawValue,
-                enabled: selector.allCandidateIDs()
-            )
+            // 라우팅 결정은 AdapterRouter 가 (단위 테스트 가능 위치) — 회귀 가드.
+            let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
             let session = try await adapter.createSession(
                 folderPath: folder.path,
                 preferredSessionId: folder.sessionId,

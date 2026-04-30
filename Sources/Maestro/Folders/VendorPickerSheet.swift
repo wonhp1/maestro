@@ -23,10 +23,10 @@ struct VendorPickerSheet: View {
     /// v0.9.0 — Codex / Gemini 선택 시 auth 검사 (CLI 는 설치됐지만 OAuth 안 된
     /// 경우 banner 로 안내). adapter id → auth 상태.
     @State private var authStateByAdapter: [String: AuthState] = [:]
-    /// v0.9.2 — Codex 인앱 로그인 진행 중 — UI 가 spinner 표시 + 중복 실행 차단.
-    @State private var codexLoginInProgress: Bool = false
-    /// v0.9.2 — 인앱 로그인 결과 메시지 (성공/실패/취소).
-    @State private var codexLoginMessage: String?
+    /// v0.9.2 — Codex / Gemini 인앱 로그인 진행 중 — adapter id → bool.
+    @State private var loginInProgress: [String: Bool] = [:]
+    /// v0.9.2 — 인앱 로그인 결과 메시지 (성공/실패/취소). adapter id → message.
+    @State private var loginMessage: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -234,6 +234,8 @@ struct VendorPickerSheet: View {
     @ViewBuilder
     private func authMissingBanner(for adapterId: String) -> some View {
         let cliName = adapterId == "codex" ? "Codex" : "Gemini"
+        let inProgress = loginInProgress[adapterId] ?? false
+        let message = loginMessage[adapterId]
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -241,74 +243,86 @@ struct VendorPickerSheet: View {
                 Text("\(cliName) 인증이 필요합니다")
                     .font(.callout).bold()
             }
-            // v0.9.2 — 인앱 로그인 (Codex 만 — Gemini 는 별도 login 명령 X).
-            if adapterId == "codex" {
-                Text("아래 \"Maestro 로 로그인\" 클릭 시 브라우저가 자동으로 열립니다. 로그인 완료까지 기다린 후 자동 갱신.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    Button {
-                        Task { await performCodexLogin() }
-                    } label: {
-                        if codexLoginInProgress {
-                            HStack(spacing: 4) {
-                                ProgressView().controlSize(.small)
-                                Text("로그인 진행 중…")
-                            }
-                        } else {
-                            Label("Maestro 로 로그인", systemImage: "person.badge.key.fill")
+            Text(loginGuideText(for: adapterId))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Button {
+                    Task { await performLogin(for: adapterId) }
+                } label: {
+                    if inProgress {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.small)
+                            Text("로그인 진행 중…")
                         }
+                    } else {
+                        Label("Maestro 로 로그인", systemImage: "person.badge.key.fill")
                     }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(codexLoginInProgress)
-                    Button("다시 검사") { Task { await loadAuth(for: adapterId) } }
-                        .controlSize(.small)
-                        .disabled(codexLoginInProgress)
                 }
-                if let msg = codexLoginMessage {
-                    Text(msg)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Text("또는 터미널에서 `codex login` 실행 / OPENAI_API_KEY 환경변수 설정")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            } else {
-                // Gemini — 별도 auth 명령 없음, 첫 prompt 호출 시 자동 OAuth.
-                Text("터미널에서 `gemini` 를 실행하면 첫 사용 시 브라우저로 Google OAuth 진행됩니다. 또는 GEMINI_API_KEY 환경변수.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .disabled(inProgress)
                 Button("다시 검사") { Task { await loadAuth(for: adapterId) } }
                     .controlSize(.small)
+                    .disabled(inProgress)
             }
+            if let msg = message {
+                Text(msg).font(.caption2).foregroundStyle(.secondary)
+            }
+            Text(loginFallbackText(for: adapterId))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(10)
         .background(Color.orange.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    /// v0.9.2 — codex login 인앱 실행 → polling → 자동 갱신.
-    private func performCodexLogin() async {
-        guard let codexPath = PATHExecutableLocator().locate("codex") else {
-            codexLoginMessage = "codex CLI 를 찾을 수 없어요"
+    private func loginGuideText(for adapterId: String) -> String {
+        if adapterId == "codex" {
+            return "\"Maestro 로 로그인\" 클릭 시 브라우저가 자동으로 열립니다. ChatGPT 계정으로 로그인 후 자동 갱신."
+        }
+        return "\"Maestro 로 로그인\" 클릭 시 Gemini 가 첫 prompt 를 보내며 Google OAuth 가 자동 트리거됩니다. (토큰 1회 소비)"
+    }
+
+    private func loginFallbackText(for adapterId: String) -> String {
+        if adapterId == "codex" {
+            return "또는 터미널에서 `codex login` / OPENAI_API_KEY 환경변수"
+        }
+        return "또는 터미널에서 `gemini` / GEMINI_API_KEY 환경변수"
+    }
+
+    /// v0.9.2 — codex/gemini 인앱 로그인 dispatch.
+    private func performLogin(for adapterId: String) async {
+        let cliName = adapterId  // "codex" or "gemini"
+        guard let path = PATHExecutableLocator().locate(cliName) else {
+            loginMessage[adapterId] = "\(cliName) CLI 를 찾을 수 없어요"
             return
         }
-        codexLoginInProgress = true
-        codexLoginMessage = "브라우저에서 로그인 중…"
-        defer { codexLoginInProgress = false }
+        loginInProgress[adapterId] = true
+        loginMessage[adapterId] = "브라우저에서 로그인 중…"
+        defer { loginInProgress[adapterId] = false }
 
-        let result = await InteractiveAuthHelper.loginCodex(codexPath: codexPath)
+        let result: InteractiveAuthHelper.LoginResult = await {
+            switch adapterId {
+            case "codex":
+                return await InteractiveAuthHelper.loginCodex(codexPath: path)
+            case "gemini":
+                return await InteractiveAuthHelper.loginGemini(geminiPath: path)
+            default:
+                return .processFailed(message: "지원되지 않는 어댑터: \(adapterId)")
+            }
+        }()
         switch result {
         case .success:
-            codexLoginMessage = "로그인 성공"
-            await loadAuth(for: "codex")
+            loginMessage[adapterId] = "로그인 성공"
+            await loadAuth(for: adapterId)
         case .cancelled:
-            codexLoginMessage = "로그인 취소됨"
+            loginMessage[adapterId] = "로그인 취소됨"
         case .timedOut:
-            codexLoginMessage = "5분 내 로그인 안 됨. 다시 시도해주세요."
-        case .processFailed(let message):
-            codexLoginMessage = "실패: \(message)"
+            loginMessage[adapterId] = "5분 내 로그인 안 됨. 다시 시도해주세요."
+        case .processFailed(let m):
+            loginMessage[adapterId] = "실패: \(m)"
         }
     }
 

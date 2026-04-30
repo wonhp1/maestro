@@ -3,6 +3,43 @@
 모든 사용자 가시 변경. 버전 형식 [SemVer](https://semver.org/spec/v2.0.0.html), 배포는
 GitHub Actions release workflow 자동화 (코드 서명 + 노타리 + DMG).
 
+## [0.10.0] — 2026-05-01
+
+v0.9 사이클의 4-agent 코드 리뷰 후속 — 사용자 가시 변경 없음, 코드 위생 / 회귀
+가드 / 접근성 위주.
+
+### Added
+
+- `AdapterRouter` (AdapterSelector extension): 폴더 → 어댑터 라우팅 단위 테스트
+  가능 위치. v0.9.6 critical 회귀 (codex/gemini → claude 잘못 라우팅) 의 단위
+  회귀 가드 6개 추가.
+- `OAuthCLISpec` 공개 struct + `login(spec:)` generic entry point — 미래 OAuth
+  CLI 추가 시 spec 만 정의 (Cursor / Aider OAuth 등).
+- VendorPickerSheet 접근성: 어댑터 행 4개 + 로그인 버튼 + 경고 아이콘에
+  accessibilityLabel + traits + hint 부여 (VoiceOver / 색맹 사용자).
+
+### Changed
+
+- VendorPickerSheet: `loginInProgress: [String: Bool]` 외에 진행 중 Task 핸들을
+  `loginTask: Task<Void, Never>?` 로 보관, sheet 닫힘 시 `.onDisappear` 에서 cancel.
+  → 5분 동안 좀비 polling 프로세스 사라짐.
+- `runOAuthSubprocess` 64줄 함수를 4개 stage 로 분리 (setup / inject stdin /
+  poll / check exit). swiftlint disable 3건 제거.
+
+### Tests
+
+- 1050 → 1059 (+9):
+  - `AdapterRouterTests` 6개 (라우팅 회귀 가드, 미래 어댑터 자동 반영, fallback)
+  - `InteractiveAuthHelperTests`: cancellation + generic spec invalid path +
+    happy path (success 분기 첫 커버리지)
+
+### Refactored (코드 위생, 동작 변화 0)
+
+- v0.9.6 hotfix 의 `enabled: ["claude", "aider", "codex", "gemini"]` 하드코딩을
+  `selector.allCandidateIDs()` 로 단순화. 새 어댑터 추가 시 자동 반영.
+- `AdapterSelector.allCandidateIDs()` 를 `nonisolated` 로 변경 — actor hop 제거
+  (immutable `let candidates` 만 읽음).
+
 ## [0.9.8] — 2026-05-01
 
 ### Added

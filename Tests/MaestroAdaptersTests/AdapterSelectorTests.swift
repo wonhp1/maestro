@@ -111,4 +111,44 @@ final class AdapterSelectorTests: XCTestCase {
         let installed = await selector.installedAdapterIDs()
         XCTAssertEqual(installed, ["aider", "claude"])
     }
+
+    // MARK: - v0.9.6 회귀 방지 — allCandidateIDs
+
+    /// v0.9.6 회귀 방지: ChatFactory 가 `enabled` 셋을 하드코딩하면
+    /// 새 어댑터 (codex, gemini) 가 누락됨. `allCandidateIDs()` 가 등록된 모든
+    /// candidate 를 반환하는지 검증해서 호출자가 이걸 사용하면 누락 불가능.
+    func testAllCandidateIDsReturnsAllRegisteredKeys() async {
+        let claude = StubAdapter(id: "claude", installed: true)
+        let aider = StubAdapter(id: "aider", installed: false)
+        let codex = StubAdapter(id: "codex", installed: true)
+        let gemini = StubAdapter(id: "gemini", installed: true)
+        let selector = AdapterSelector(
+            candidates: [
+                "claude": claude,
+                "aider": aider,
+                "codex": codex,
+                "gemini": gemini,
+            ],
+            fallback: StubAdapter(id: "mock", installed: true)
+        )
+        let ids = await selector.allCandidateIDs()
+        XCTAssertEqual(ids, ["claude", "aider", "codex", "gemini"])
+    }
+
+    /// 등록된 어댑터 ID 가 그대로 select(enabled:) 의 valid 인풋이어야 한다는 보장.
+    /// — `allCandidateIDs()` 결과를 enabled 로 넘기면 모든 preferred 가 통과.
+    func testAllCandidateIDsRoundTripsThroughSelect() async {
+        let claude = StubAdapter(id: "claude", installed: true)
+        let codex = StubAdapter(id: "codex", installed: true)
+        let gemini = StubAdapter(id: "gemini", installed: true)
+        let selector = AdapterSelector(
+            candidates: ["claude": claude, "codex": codex, "gemini": gemini],
+            fallback: StubAdapter(id: "mock", installed: true)
+        )
+        let enabled = await selector.allCandidateIDs()
+        for prefer in ["claude", "codex", "gemini"] {
+            let chosen = await selector.select(preferred: prefer, enabled: enabled)
+            XCTAssertEqual(chosen.id, prefer, "preferred=\(prefer) but got \(chosen.id)")
+        }
+    }
 }

@@ -24,10 +24,12 @@ extension ControlTowerEnvironment {
                 )
                 return try ChatViewModel(adapter: ctrl, session: session)
             }
-            // v0.9.6: Codex / Gemini 추가 (v0.9.0 Phase 4 누락된 라우팅 회귀 fix).
+            // v0.9.6: enabled 를 하드코딩하지 말고 selector 의 모든 candidate 를 사용.
+            // (v0.5.1 ~ v0.9.5: ["claude","aider"] 하드코딩 → codex/gemini 폴더가
+            // 항상 claude 로 dispatch 되던 회귀. 새 어댑터 추가 시 자동 반영되도록 유연화.)
             let adapter = await selector.select(
                 preferred: folder.adapterId.rawValue,
-                enabled: ["claude", "aider", "codex", "gemini"]
+                enabled: await selector.allCandidateIDs()
             )
             let session = try await adapter.createSession(
                 folderPath: folder.path,

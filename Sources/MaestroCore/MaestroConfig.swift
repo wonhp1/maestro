@@ -21,7 +21,7 @@ public enum MaestroConfig {
     /// - Warning: Phase 21 Sparkle 통합 시 Info.plist `CFBundleShortVersionString` 및
     ///   appcast.xml 과 반드시 동기화. **단일 진실 원천을 유지하려면 Phase 21 에서
     ///   빌드 스크립트로 생성하거나 Info.plist 에서 읽어오도록 리팩터링 예정.**
-    public static let appVersion: String = "0.9.6"
+    public static let appVersion: String = "0.9.7"
 
     /// 최소 지원 macOS 버전.
     ///

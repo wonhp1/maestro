@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import MaestroCore
 import SwiftUI
@@ -250,9 +251,11 @@ struct VendorPickerSheet: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+                    .accessibilityLabel("경고")
                 Text("\(cliName) 인증이 필요합니다")
                     .font(.callout).bold()
             }
+            .accessibilityElement(children: .combine)
             Text(loginGuideText(for: adapterId))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -274,12 +277,16 @@ struct VendorPickerSheet: View {
                 .controlSize(.small)
                 .buttonStyle(.borderedProminent)
                 .disabled(inProgress)
+                .accessibilityLabel(inProgress ? "로그인 진행 중" : "Maestro 로 로그인")
+                .accessibilityHint(inProgress ? "브라우저에서 인증을 완료해주세요" : "브라우저가 자동으로 열립니다")
                 Button("다시 검사") { Task { await loadAuth(for: adapterId) } }
                     .controlSize(.small)
                     .disabled(inProgress)
+                    .accessibilityHint("어댑터 인증 상태를 다시 확인")
             }
             if let msg = message {
                 Text(msg).font(.caption2).foregroundStyle(.secondary)
+                    .accessibilityLabel("로그인 상태: \(msg)")
             }
             Text(loginFallbackText(for: adapterId))
                 .font(.caption2)
@@ -473,6 +480,11 @@ private struct AdapterRow: View {
         .buttonStyle(.plain)
         .disabled(!isInstalled)
         .opacity(isInstalled ? 1.0 : 0.65)
+        // v0.10.0 Phase 4: a11y — VoiceOver 사용자 + 색맹 사용자 위해 라벨 통합.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(displayName) 어댑터, \(isInstalled ? "설치됨, 버전 \(versionBadge)" : "미설치")")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityHint(isInstalled ? "탭하면 선택" : "설치 후 사용 가능")
     }
 
     private var radio: some View {

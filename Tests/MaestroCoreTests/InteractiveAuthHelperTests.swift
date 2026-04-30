@@ -79,6 +79,44 @@ final class InteractiveAuthHelperTests: XCTestCase {
         XCTAssertNotEqual(result, .success)
     }
 
+    // MARK: - extractOAuthURL
+
+    func testExtractOAuthURLPrefersGoogleOAuth() {
+        let text = """
+            Some intro text.
+            Open this URL: https://accounts.google.com/o/oauth2/auth?client_id=abc&scope=...
+            Done.
+            """
+        let url = InteractiveAuthHelper.extractOAuthURL(from: text)
+        XCTAssertEqual(url?.host, "accounts.google.com")
+    }
+
+    func testExtractOAuthURLPrefersOpenAIOAuth() {
+        let text = "Visit https://auth.openai.com/oauth/authorize?response_type=code to log in."
+        let url = InteractiveAuthHelper.extractOAuthURL(from: text)
+        XCTAssertEqual(url?.host, "auth.openai.com")
+    }
+
+    func testExtractOAuthURLFallsBackToFirstHTTPS() {
+        let text = "See https://example.com/info for details."
+        let url = InteractiveAuthHelper.extractOAuthURL(from: text)
+        XCTAssertEqual(url?.host, "example.com")
+    }
+
+    func testExtractOAuthURLReturnsNilForNoURL() {
+        XCTAssertNil(InteractiveAuthHelper.extractOAuthURL(from: "no urls here"))
+    }
+
+    func testExtractOAuthURLPrefersOAuthOverPlainHTTPS() {
+        // 첫 https 가 OAuth 가 아니면 뒤에 나오는 OAuth URL 을 우선해야 함.
+        let text = """
+            Logo: https://cdn.example.com/logo.png
+            Login: https://accounts.google.com/o/oauth2/v2/auth?...
+            """
+        let url = InteractiveAuthHelper.extractOAuthURL(from: text)
+        XCTAssertEqual(url?.host, "accounts.google.com")
+    }
+
     // MARK: - Helpers
 
     private func makeEmptyHome() throws -> URL {

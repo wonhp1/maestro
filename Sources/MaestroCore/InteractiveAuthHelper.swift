@@ -1,17 +1,17 @@
+import AppKit
 import Foundation
 
-/// v0.9.2 — 인앱 OAuth 로그인 도우미.
+/// v0.9.4 — 인앱 OAuth 로그인 도우미.
 ///
-/// Codex CLI 의 `codex login` 은 자동으로 브라우저를 열고 localhost:1455 에서
-/// callback 을 받음. Maestro 는 subprocess 만 spawn 하고, 백그라운드에서 인증
-/// 상태를 polling 하다가 성공하면 종료.
+/// CLI subprocess 가 자동 브라우저 오픈 시도하지만, Pipe 로 stdout/stderr 캡처
+/// 되면 자동 오픈이 작동 안 함. 해결: subprocess output 에서 OAuth URL 추출 →
+/// `NSWorkspace.shared.open(url)` 로 직접 브라우저 호출.
 ///
 /// 사용자 경험:
 /// 1. Maestro 의 "로그인" 버튼 클릭
-/// 2. 브라우저 자동 열림 → ChatGPT 계정으로 로그인
-/// 3. 로그인 완료 시 Maestro UI 자동 갱신 (banner 사라짐)
+/// 2. 브라우저 자동 열림 (Maestro 가 URL 파싱해서 직접 호출)
+/// 3. 로그인 후 Maestro 가 polling 해서 자동 갱신
 public enum InteractiveAuthHelper {
-    /// 결과 — 성공 / 사용자 취소 / 시간 초과 / 프로세스 실패.
     public enum LoginResult: Sendable, Equatable {
         case success
         case cancelled
@@ -19,96 +19,84 @@ public enum InteractiveAuthHelper {
         case processFailed(message: String)
     }
 
-    /// `codex login` spawn + 인증 완료까지 polling.
-    ///
-    /// - Parameters:
-    ///   - codexPath: `codex` 실행 파일 경로 (PATH 검색 결과)
-    ///   - checker: 인증 상태 검사기
-    ///   - pollInterval: 검사 주기 (default 2초)
-    ///   - timeout: 전체 timeout (default 5분)
-    /// - Returns: `LoginResult`
+    /// `codex login` spawn → URL 추출 + 브라우저 오픈 → polling.
     public static func loginCodex(
         codexPath: URL,
         checker: EnvironmentChecker = EnvironmentChecker(),
         pollInterval: TimeInterval = 2,
         timeout: TimeInterval = 300
     ) async -> LoginResult {
-        let process = Process()
-        process.executableURL = codexPath
-        process.arguments = ["login"]
-        // stdout/stderr 캡처 — 디버깅용. URL 출력하지만 자동 브라우저 열림.
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-        } catch {
-            return .processFailed(message: "codex 실행 실패: \(error.localizedDescription)")
-        }
-
-        let deadline = Date().addingTimeInterval(timeout)
-        let pollNanos = UInt64(pollInterval * 1_000_000_000)
-        while Date() < deadline {
-            do {
-                try await Task.sleep(nanoseconds: pollNanos)
-            } catch {
-                terminateIfRunning(process)
-                return .cancelled
-            }
-            if Task.isCancelled {
-                terminateIfRunning(process)
-                return .cancelled
-            }
-            // 인증 성공 검사
-            if await checker.checkCodexAuth().isReady {
-                terminateIfRunning(process)
-                return .success
-            }
-            // process 가 일찍 종료된 경우 (사용자가 ctrl-c 등)
-            if !process.isRunning {
-                let exitCode = process.terminationStatus
-                if exitCode == 0 {
-                    // 종료됐는데 auth 미완료 — 브라우저 닫음.
-                    return .cancelled
-                }
-                let stderr = String(
-                    data: errorPipe.fileHandleForReading.availableData,
-                    encoding: .utf8
-                ) ?? ""
-                return .processFailed(message: "codex login exit \(exitCode): \(stderr.prefix(200))")
-            }
-        }
-        terminateIfRunning(process)
-        return .timedOut
+        await runOAuthSubprocess(
+            executable: codexPath,
+            arguments: ["login"],
+            authCheck: { await checker.checkCodexAuth().isReady },
+            pollInterval: pollInterval,
+            timeout: timeout
+        )
     }
 
-    /// `gemini` spawn + Google OAuth callback 까지 polling.
-    ///
-    /// Gemini 는 별도 `login` 명령이 없음 — 첫 prompt 호출 시 OAuth 자동 트리거.
-    /// `-p "ping" --yolo --skip-trust` 로 최소 prompt 실행 (응답 받기 전에 auth 감지
-    /// 시 process 종료, 토큰 소비 거의 0).
+    /// `gemini -p "ping" --yolo --skip-trust` spawn → URL 추출 + 브라우저 오픈 → polling.
+    /// Gemini 는 별도 login 명령 없음 — 첫 prompt 호출 시 OAuth 자동 트리거.
     public static func loginGemini(
         geminiPath: URL,
         checker: EnvironmentChecker = EnvironmentChecker(),
         pollInterval: TimeInterval = 2,
         timeout: TimeInterval = 300
     ) async -> LoginResult {
+        await runOAuthSubprocess(
+            executable: geminiPath,
+            arguments: ["-p", "ping", "--yolo", "--skip-trust"],
+            authCheck: { await checker.checkGeminiAuth().isReady },
+            pollInterval: pollInterval,
+            timeout: timeout
+        )
+    }
+
+    // MARK: - Private
+
+    // 공통 OAuth subprocess 실행 + output 모니터링 + URL 자동 오픈.
+    // swiftlint:disable:next function_body_length
+    private static func runOAuthSubprocess(
+        executable: URL,
+        arguments: [String],
+        authCheck: @escaping @Sendable () async -> Bool,
+        pollInterval: TimeInterval,
+        timeout: TimeInterval
+    ) async -> LoginResult {
         let process = Process()
-        process.executableURL = geminiPath
-        process.arguments = ["-p", "ping", "--yolo", "--skip-trust"]
+        process.executableURL = executable
+        process.arguments = arguments
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        // stdout / stderr 누적 — 비동기 readabilityHandler.
+        let accumulator = OutputAccumulator()
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
+                accumulator.append(text)
+            }
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
+                accumulator.append(text)
+            }
+        }
+        defer {
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+        }
+
         do {
             try process.run()
         } catch {
-            return .processFailed(message: "gemini 실행 실패: \(error.localizedDescription)")
+            return .processFailed(message: "실행 실패: \(error.localizedDescription)")
         }
 
+        var openedURL = false
         let deadline = Date().addingTimeInterval(timeout)
         let pollNanos = UInt64(pollInterval * 1_000_000_000)
         while Date() < deadline {
@@ -122,7 +110,12 @@ public enum InteractiveAuthHelper {
                 terminateIfRunning(process)
                 return .cancelled
             }
-            if await checker.checkGeminiAuth().isReady {
+            // OAuth URL 자동 오픈 (한 번만)
+            if !openedURL, let url = Self.extractOAuthURL(from: accumulator.snapshot()) {
+                await MainActor.run { _ = NSWorkspace.shared.open(url) }
+                openedURL = true
+            }
+            if await authCheck() {
                 terminateIfRunning(process)
                 return .success
             }
@@ -131,12 +124,9 @@ public enum InteractiveAuthHelper {
                 if exitCode == 0 {
                     return .cancelled
                 }
-                let stderr = String(
-                    data: errorPipe.fileHandleForReading.availableData,
-                    encoding: .utf8
-                ) ?? ""
+                let snapshot = accumulator.snapshot()
                 return .processFailed(
-                    message: "gemini exit \(exitCode): \(stderr.prefix(200))"
+                    message: "exit \(exitCode): \(snapshot.suffix(200))"
                 )
             }
         }
@@ -144,9 +134,50 @@ public enum InteractiveAuthHelper {
         return .timedOut
     }
 
+    /// stdout/stderr 에서 첫 OAuth URL 추출.
+    /// Codex: `https://auth.openai.com/oauth/authorize?...`
+    /// Gemini: `https://accounts.google.com/o/oauth2/...`
+    static func extractOAuthURL(from text: String) -> URL? {
+        let pattern = #"https://[^\s)]+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, range: range)
+        for match in matches {
+            guard let r = Range(match.range, in: text) else { continue }
+            let candidate = String(text[r])
+            // OAuth 패턴 우선 (auth.openai.com 또는 accounts.google.com)
+            if candidate.contains("oauth") || candidate.contains("accounts.google.com")
+                || candidate.contains("auth.openai.com") {
+                return URL(string: candidate)
+            }
+        }
+        // OAuth 패턴 없으면 첫 번째 https URL
+        if let first = matches.first,
+           let r = Range(first.range, in: text) {
+            return URL(string: String(text[r]))
+        }
+        return nil
+    }
+
     private static func terminateIfRunning(_ process: Process) {
         if process.isRunning {
             process.terminate()
         }
+    }
+}
+
+/// stdout/stderr 누적기 — readabilityHandler 가 background queue 에서 호출 → lock 필수.
+private final class OutputAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = ""
+
+    func append(_ s: String) {
+        lock.lock(); defer { lock.unlock() }
+        text += s
+    }
+
+    func snapshot() -> String {
+        lock.lock(); defer { lock.unlock() }
+        return text
     }
 }

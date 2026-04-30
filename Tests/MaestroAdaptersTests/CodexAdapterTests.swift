@@ -113,8 +113,9 @@ final class CodexAdapterTests: XCTestCase {
         let adapter = try makeAdapter()
         let models = await adapter.availableModels()
         XCTAssertFalse(models.isEmpty)
-        XCTAssertTrue(models.contains("gpt-5"), "gpt-5 should be in available models")
-        XCTAssertTrue(models.contains("o1-preview"), "o1-preview should be in available models")
+        // models_cache.json 의 실제 카탈로그 기반 (2026-04 시점)
+        XCTAssertTrue(models.contains("gpt-5.5"), "gpt-5.5 should be in available models")
+        XCTAssertTrue(models.contains("gpt-5.3-codex"), "Codex 특화 모델 포함")
     }
 
     func testResolvedModelExplicitWhenSet() async throws {
@@ -409,11 +410,44 @@ final class CodexAdapterTests: XCTestCase {
         XCTAssertTrue(initialized)
     }
 
-    func testListSlashCommandsReturnsEmptyInPhase2A() async throws {
-        let adapter = try makeAdapter()
+    func testListSlashCommandsReturnsBuiltInsAndScans() async throws {
+        // skills 디렉토리 비어있으면 builtin 만 — 최소 4개 (help/clear/model/login).
+        let emptyDir = tempDir.appending(path: "empty-skills", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: emptyDir, withIntermediateDirectories: true)
+        let adapter = try makeAdapter(
+            userSkillsDirectory: emptyDir, systemSkillsDirectory: emptyDir
+        )
         let session = try await adapter.createSession(folderPath: tempDir)
         let cmds = await adapter.listSlashCommands(in: session)
-        XCTAssertTrue(cmds.isEmpty)
+        let names = cmds.map(\.name)
+        XCTAssertTrue(names.contains("/help"))
+        XCTAssertTrue(names.contains("/model"))
+        XCTAssertGreaterThanOrEqual(cmds.count, 4)
+    }
+
+    func testListSlashCommandsScansSystemSkills() async throws {
+        let userDir = tempDir.appending(path: "user-skills", directoryHint: .isDirectory)
+        let systemDir = tempDir.appending(path: "system-skills", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: systemDir, withIntermediateDirectories: true)
+        // system skill 1개
+        let skill = systemDir.appending(path: "imagegen", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+
+        let adapter = try makeAdapter(
+            userSkillsDirectory: userDir, systemSkillsDirectory: systemDir
+        )
+        let session = try await adapter.createSession(folderPath: tempDir)
+        let cmds = await adapter.listSlashCommands(in: session)
+        XCTAssertTrue(cmds.contains { $0.name == "/imagegen" })
+        XCTAssertTrue(cmds.contains { $0.name == "/imagegen" && $0.category == "system" })
+    }
+
+    func testAvailableModelsContainsLatest() async throws {
+        let adapter = try makeAdapter()
+        let models = await adapter.availableModels()
+        XCTAssertTrue(models.contains("gpt-5.5"), "최신 GPT-5.5 모델 포함")
+        XCTAssertTrue(models.contains("gpt-5.3-codex"), "Codex 특화 모델 포함")
     }
 
     func testCapturedSlashCommandsEmptyInitially() async throws {
@@ -427,7 +461,9 @@ final class CodexAdapterTests: XCTestCase {
     private func makeAdapter(
         executor: any ProcessExecuting = NullExecutor(),
         streamer: any ProcessStreaming = EmptyCodexStreamer(),
-        executableExists: Bool = true
+        executableExists: Bool = true,
+        userSkillsDirectory: URL? = nil,
+        systemSkillsDirectory: URL? = nil
     ) throws -> CodexAdapter {
         let detector = CLIDetector(
             locator: CodexTestLocator(
@@ -435,7 +471,18 @@ final class CodexAdapterTests: XCTestCase {
             ),
             executor: CodexDetectExecutor()
         )
-        return try CodexAdapter(executor: executor, streamer: streamer, detector: detector)
+        // skills 디렉토리 미주입 시 — 기본값 (`~/.codex/skills`) 사용. 사용자 실
+        // 디렉토리가 테스트에 영향 줄 수 있어 가능하면 명시 권장.
+        let defaults = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".codex/skills", directoryHint: .isDirectory)
+        return try CodexAdapter(
+            executor: executor,
+            streamer: streamer,
+            detector: detector,
+            userSkillsDirectory: userSkillsDirectory ?? defaults,
+            systemSkillsDirectory: systemSkillsDirectory ?? defaults
+                .appending(path: ".system", directoryHint: .isDirectory)
+        )
     }
 
     /// 캡처된 실제 Codex stdout JSONL 모방.

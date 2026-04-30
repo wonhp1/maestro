@@ -38,6 +38,10 @@ public actor CodexAdapter: AgentAdapter {
     private let detector: CLIDetector
     private let profile: AgentProfile
     private let sanitizer: EnvironmentSanitizer
+    /// Codex 사용자/시스템 skills 디렉토리 (e.g., `~/.codex/skills/`).
+    /// 테스트가 임시 디렉토리 주입.
+    private let userSkillsDirectory: URL
+    private let systemSkillsDirectory: URL
     private let logger: MaestroLogger
 
     private var sessions: [SessionID: Session] = [:]
@@ -59,13 +63,19 @@ public actor CodexAdapter: AgentAdapter {
         streamer: any ProcessStreaming = DefaultProcessStreamer(),
         detector: CLIDetector = CLIDetector(),
         executable: String = CodexProfile.executableName,
-        sanitizer: EnvironmentSanitizer = .default
+        sanitizer: EnvironmentSanitizer = .default,
+        userSkillsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".codex/skills", directoryHint: .isDirectory),
+        systemSkillsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".codex/skills/.system", directoryHint: .isDirectory)
     ) throws {
         self.executor = executor
         self.streamer = streamer
         self.detector = detector
         self.profile = try CodexProfile.makeProfile(executable: executable)
         self.sanitizer = sanitizer
+        self.userSkillsDirectory = userSkillsDirectory
+        self.systemSkillsDirectory = systemSkillsDirectory
         self.logger = MaestroLogger(category: .adapter)
     }
 
@@ -203,21 +213,33 @@ public actor CodexAdapter: AgentAdapter {
         }
     }
 
-    /// Phase 2D 에서 구현 — 현재는 빈 배열.
+    /// Codex 의 슬래시 명령 — 정적 builtin + skills 디렉토리 스캔.
     public func listSlashCommands(in session: Session) async -> [SlashCommand] {
-        []
+        let user = CodexSlashCommands.scan(
+            directory: userSkillsDirectory,
+            category: "user"
+        )
+        let system = CodexSlashCommands.scan(
+            directory: systemSkillsDirectory,
+            category: "system"
+        )
+        // user 가 system 을 override (같은 이름 시) — Claude 패턴과 일관.
+        let userNames = Set(user.map(\.name))
+        let filteredSystem = system.filter { !userNames.contains($0.name) }
+        return CodexSlashCommands.builtIns + user + filteredSystem
     }
 
-    /// 알려진 OpenAI 모델 alias (Phase 2D 에서 검증 / 보강).
-    /// Codex CLI 가 `-m <MODEL>` 로 받는 식별자.
+    /// Codex 가 `-m <MODEL>` 로 받는 식별자. `~/.codex/models_cache.json` 의
+    /// 실제 OpenAI 모델 카탈로그 (2026-04 시점) 기반.
     public func availableModels() async -> [String] {
         [
-            "o1-preview",
-            "o1-mini",
-            "gpt-5",
-            "gpt-5-mini",
-            "gpt-4o",
-            "gpt-4o-mini",
+            "gpt-5.5",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.3-codex",
+            "gpt-5.2",
+            "gpt-oss-120b",  // open-source provider 용
+            "gpt-oss-20b",
         ]
     }
 

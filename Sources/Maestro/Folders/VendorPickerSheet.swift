@@ -7,6 +7,7 @@ import SwiftUI
 /// - **친절** — 미설치 어댑터는 disabled + 설치 명령어 inline 표시.
 /// - **간결** — 라디오 + 설명 1-2 줄. 각 어댑터에 가장 중요한 정보 (설치 여부 + 버전) 만.
 /// - **빠른 결정** — 설치된 어댑터가 1개뿐이면 자동 선택, 사용자가 그냥 "추가" 누르면 됨.
+// swiftlint:disable:next type_body_length
 struct VendorPickerSheet: View {
     let folderURL: URL
     @Bindable var folderViewModel: FolderViewModel
@@ -17,6 +18,9 @@ struct VendorPickerSheet: View {
     /// v0.8.0 — Aider 선택 시 git/python 의존성 검사 결과 캐시.
     /// nil = 아직 검사 안 됨, .checking = 진행 중, .ready(status) = 완료.
     @State private var aiderDepsState: AiderDepsState = .idle
+    /// v0.9.0 — Codex / Gemini 선택 시 auth 검사 (CLI 는 설치됐지만 OAuth 안 된
+    /// 경우 banner 로 안내). adapter id → auth 상태.
+    @State private var authStateByAdapter: [String: AuthState] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -35,6 +39,14 @@ struct VendorPickerSheet: View {
         .padding(20)
         .frame(width: 560)
         .task { await loadDetections() }
+        .onChange(of: selectedAdapterID) { _, newID in
+            // v0.9.0 — 사용자가 codex/gemini 행 클릭하면 즉시 auth 검사 시작.
+            if newID == "codex" || newID == "gemini" {
+                if case .idle = authStateByAdapter[newID] ?? .idle {
+                    Task { await loadAuth(for: newID) }
+                }
+            }
+        }
         .sheet(item: Binding(
             get: { pendingInstallAdapterID.map { InstallTarget(id: $0) } },
             set: { newValue in pendingInstallAdapterID = newValue?.id }
@@ -85,6 +97,10 @@ struct VendorPickerSheet: View {
             // v0.8.0 — Aider 선택 시 git/python 의존성 inline 안내.
             if selectedAdapterID == "aider" {
                 aiderDependencyBanner
+            }
+            // v0.9.0 — Codex / Gemini 선택 시 auth banner.
+            if selectedAdapterID == "codex" || selectedAdapterID == "gemini" {
+                authBanner(for: selectedAdapterID)
             }
             if detectionViewModel.sortedAdapterIDs.isEmpty {
                 VStack(spacing: 8) {
@@ -139,7 +155,13 @@ struct VendorPickerSheet: View {
         // v0.8.0 — Aider 는 git + python3 도 모두 ready 여야 폴더 추가 허용.
         if selectedAdapterID == "aider" {
             if case let .ready(deps) = aiderDepsState, deps.allReady { return true }
-            // 검사 진행 중 또는 실패 → 사용자가 deps 채울 때까지 disable.
+            return false
+        }
+        // v0.9.0 — Codex / Gemini 는 auth 도 통과해야 폴더 추가 허용.
+        if selectedAdapterID == "codex" || selectedAdapterID == "gemini" {
+            if case let .ready(authed) = authStateByAdapter[selectedAdapterID] ?? .idle, authed {
+                return true
+            }
             return false
         }
         return true
@@ -158,6 +180,80 @@ struct VendorPickerSheet: View {
         if selectedAdapterID == "aider", case .idle = aiderDepsState {
             await loadAiderDeps()
         }
+        // v0.9.0 — codex/gemini 는 auth 미리 점검.
+        if selectedAdapterID == "codex" || selectedAdapterID == "gemini" {
+            await loadAuth(for: selectedAdapterID)
+        }
+    }
+
+    /// v0.9.0 — Codex / Gemini 인증 상태 검사.
+    private func loadAuth(for adapterId: String) async {
+        authStateByAdapter[adapterId] = .checking
+        let checker = EnvironmentChecker()
+        let isAuthed: Bool
+        switch adapterId {
+        case "codex":
+            isAuthed = await checker.checkCodexAuth().isReady
+        case "gemini":
+            isAuthed = await checker.checkGeminiAuth().isReady
+        default:
+            isAuthed = true
+        }
+        authStateByAdapter[adapterId] = .ready(isAuthed)
+    }
+
+    @ViewBuilder
+    private func authBanner(for adapterId: String) -> some View {
+        let state = authStateByAdapter[adapterId] ?? .idle
+        switch state {
+        case .idle:
+            Color.clear.frame(height: 0)
+                .task { await loadAuth(for: adapterId) }
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("인증 상태 확인 중…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .ready(let authed):
+            if authed {
+                EmptyView()
+            } else {
+                authMissingBanner(for: adapterId)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func authMissingBanner(for adapterId: String) -> some View {
+        let cliName = adapterId == "codex" ? "Codex" : "Gemini"
+        let loginCmd = adapterId == "codex"
+            ? "codex login"
+            : "gemini  (첫 실행 시 자동 OAuth)"
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("\(cliName) 인증이 필요합니다")
+                    .font(.callout).bold()
+            }
+            Text("터미널에서 `\(loginCmd)` 를 실행해 로그인하세요. 또는 환경변수로 API key 설정.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("다시 검사") { Task { await loadAuth(for: adapterId) } }
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// v0.9.0 — Codex / Gemini auth 검사 진행 상태.
+    private enum AuthState: Equatable {
+        case idle
+        case checking
+        case ready(Bool)
     }
 
     /// v0.8.0 — Aider 의존성 (git, python3) 검사. selectedAdapterID 가 aider 일 때만 호출.

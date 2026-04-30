@@ -112,6 +112,35 @@ final class InteractiveAuthHelperTests: XCTestCase {
         XCTAssertEqual(result, .cancelled, "외부 Task cancel 시 .cancelled 반환되어야 함")
     }
 
+    // MARK: - v0.10.0 Phase 3 — generic spec API
+
+    /// `OAuthCLISpec` + `login(spec:)` 으로 임의 CLI 인증 가능 — 미래 어댑터 추가 시 1줄.
+    func testGenericSpecLoginInvalidPathFailsFast() async {
+        let spec = InteractiveAuthHelper.OAuthCLISpec(
+            executable: URL(filePath: "/nonexistent/whatever"),
+            arguments: [],
+            initialStdin: nil,
+            authCheck: { false }
+        )
+        let result = await InteractiveAuthHelper.login(spec: spec, pollInterval: 0.05, timeout: 1)
+        if case .processFailed = result { /* OK */ } else {
+            XCTFail("expected processFailed for invalid path, got \(result)")
+        }
+    }
+
+    /// v0.10.0 review must-fix: success 분기 happy path 커버리지 0% → spec 으로 검증.
+    /// authCheck 가 true 반환하면 polling 루프가 `.success` 로 즉시 종료해야 함.
+    func testGenericSpecLoginSuccessWhenAuthCheckPasses() async {
+        let spec = InteractiveAuthHelper.OAuthCLISpec(
+            executable: URL(filePath: "/usr/bin/yes"),  // 무한 출력 — 자체 종료 안 함
+            arguments: [],
+            initialStdin: nil,
+            authCheck: { true }  // 첫 polling 즉시 success
+        )
+        let result = await InteractiveAuthHelper.login(spec: spec, pollInterval: 0.05, timeout: 5)
+        XCTAssertEqual(result, .success, "authCheck=true 시 polling 즉시 success 종료")
+    }
+
     // MARK: - extractOAuthURL
 
     func testExtractOAuthURLPrefersGoogleOAuth() {

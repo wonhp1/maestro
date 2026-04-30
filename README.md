@@ -1,8 +1,17 @@
 # 🎼 Maestro
 
-> **AI 코딩 에이전트 공용 지휘소** — Claude, Cursor, Aider 같은 서로 다른 AI CLI 에이전트들을 한 팀으로 지휘하는 macOS 네이티브 앱.
+> **AI 코딩 에이전트 공용 지휘소** — Claude / Codex / Gemini / Aider 같은 서로 다른 AI CLI 에이전트들을 한 팀으로 지휘하는 macOS 네이티브 앱.
 
-**Status**: ⏳ Phase 1 시작 전 (계획 완료)
+**Status**: ✅ v0.9.0 — Codex (OpenAI) + Gemini (Google) 어댑터 추가
+
+## 🤖 지원 어댑터 (v0.9.0 기준)
+
+| 어댑터              | 모델                       | 인증                                                     |
+| ------------------- | -------------------------- | -------------------------------------------------------- |
+| **Claude Code**     | Claude 4.5 등              | OAuth (Pro/Max) 또는 ANTHROPIC_API_KEY                   |
+| **Codex (OpenAI)**  | GPT-5.5, GPT-5.3-codex 등  | OAuth (ChatGPT Plus/Pro) 또는 OPENAI_API_KEY             |
+| **Gemini (Google)** | Gemini 3 Flash, 2.5 Pro 등 | OAuth (자동) 또는 GEMINI_API_KEY (무료 tier 일 1500 req) |
+| **Aider**           | 모든 LLM (BYO model)       | adapter 별                                               |
 
 ---
 

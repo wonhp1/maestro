@@ -24,8 +24,8 @@ extension ControlTowerEnvironment {
                 )
                 return try ChatViewModel(adapter: ctrl, session: session)
             }
-            // 라우팅 결정은 AdapterRouter 가 (단위 테스트 가능 위치) — 회귀 가드.
-            let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+            // 라우팅 결정은 selector.resolve(folder:) 가 (단위 테스트 가능 위치) — 회귀 가드.
+            let adapter = await selector.resolve(folder: folder)
             let session = try await adapter.createSession(
                 folderPath: folder.path,
                 preferredSessionId: folder.sessionId,

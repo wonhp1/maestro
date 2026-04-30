@@ -79,6 +79,39 @@ final class InteractiveAuthHelperTests: XCTestCase {
         XCTAssertNotEqual(result, .success)
     }
 
+    // MARK: - v0.10.0 Phase 2 — Task cancellation
+
+    /// 외부 Task cancel → InteractiveAuthHelper 가 .cancelled 반환 + subprocess 정리.
+    /// VendorPickerSheet 의 .onDisappear cancellation 흐름을 helper 단위로 검증.
+    func testLoginCancelledByTaskCancellation() async throws {
+        let tempHome = try makeEmptyHome()
+        defer { try? FileManager.default.removeItem(at: tempHome) }
+        let isolatedChecker = EnvironmentChecker(
+            locator: EmptyLocator(),
+            executor: NoopExec(),
+            homeDirectory: tempHome,
+            environment: [:]
+        )
+        // 자기 검증 — auth 가 false 임을 확인 (즉, polling 이 never success 트리거).
+        let preflight = await isolatedChecker.checkCodexAuth()
+        XCTAssertFalse(preflight.isReady, "테스트 격리 실패 — auth 가 이미 ready 면 cancel 검증 무의미")
+        // /usr/bin/yes 는 무한히 출력 → polling 이 never 통과 → cancel 만이 종료 트리거.
+        let yesBinary = URL(filePath: "/usr/bin/yes")
+        let task = Task {
+            await InteractiveAuthHelper.loginCodex(
+                codexPath: yesBinary,
+                checker: isolatedChecker,
+                pollInterval: 0.05,
+                timeout: 60  // 충분히 길게 — cancel 만이 중단 사유여야 함
+            )
+        }
+        // 100ms 후 cancel
+        try await Task.sleep(nanoseconds: 100_000_000)
+        task.cancel()
+        let result = await task.value
+        XCTAssertEqual(result, .cancelled, "외부 Task cancel 시 .cancelled 반환되어야 함")
+    }
+
     // MARK: - extractOAuthURL
 
     func testExtractOAuthURLPrefersGoogleOAuth() {

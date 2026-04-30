@@ -26,6 +26,10 @@ struct VendorPickerSheet: View {
     @State private var authStateByAdapter: [String: AuthState] = [:]
     /// v0.9.2 — Codex / Gemini 인앱 로그인 진행 중 — adapter id → bool.
     @State private var loginInProgress: [String: Bool] = [:]
+    /// v0.10.0 Phase 2: 진행 중인 로그인 Task — sheet 닫힘 시 cancel 해서
+    /// 백그라운드 polling 좀비 프로세스 방지. 한 번에 한 어댑터만 로그인 중이
+    /// 가능 (UX 적으로 OAuth 브라우저는 1개) → 단일 Optional 로 충분.
+    @State private var loginTask: Task<Void, Never>?
     /// v0.9.2 — 인앱 로그인 결과 메시지 (성공/실패/취소). adapter id → message.
     @State private var loginMessage: [String: String] = [:]
 
@@ -46,6 +50,11 @@ struct VendorPickerSheet: View {
         .padding(20)
         .frame(width: 560)
         .task { await loadDetections() }
+        .onDisappear {
+            // v0.10.0 Phase 2: sheet 닫힘 시 진행 중 로그인 cancel — 좀비 프로세스 방지.
+            loginTask?.cancel()
+            loginTask = nil
+        }
         .onChange(of: selectedAdapterID) { _, newID in
             // v0.9.0 — 사용자가 codex/gemini 행 클릭하면 즉시 auth 검사 시작.
             if newID == "codex" || newID == "gemini" {
@@ -249,7 +258,9 @@ struct VendorPickerSheet: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 Button {
-                    Task { await performLogin(for: adapterId) }
+                    // v0.10.0: Task 핸들 보관 → onDisappear 에서 cancel 가능.
+                    loginTask?.cancel()
+                    loginTask = Task { await performLogin(for: adapterId) }
                 } label: {
                     if inProgress {
                         HStack(spacing: 4) {
@@ -295,6 +306,8 @@ struct VendorPickerSheet: View {
 
     /// v0.9.2 — codex/gemini 인앱 로그인 dispatch.
     private func performLogin(for adapterId: String) async {
+        // v0.10.0 review must-fix: 모든 종료 경로 (early return 포함) 에서 task 슬롯 청소.
+        defer { loginTask = nil }
         let cliName = adapterId  // "codex" or "gemini"
         guard let path = PATHExecutableLocator().locate(cliName) else {
             loginMessage[adapterId] = "\(cliName) CLI 를 찾을 수 없어요"

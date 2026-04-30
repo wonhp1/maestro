@@ -69,28 +69,28 @@ final class AdapterRouterTests: XCTestCase {
     func testCodexFolderRoutesToCodexAdapter() async {
         let selector = makeSelector(installedIDs: ["claude", "aider", "codex", "gemini"])
         let folder = makeFolder(adapterId: "codex")
-        let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+        let adapter = await selector.resolve(folder: folder)
         XCTAssertEqual(adapter.id, "codex", "codex 폴더가 Claude 로 잘못 라우팅되던 v0.9.6 회귀 가드")
     }
 
     func testGeminiFolderRoutesToGeminiAdapter() async {
         let selector = makeSelector(installedIDs: ["claude", "aider", "codex", "gemini"])
         let folder = makeFolder(adapterId: "gemini")
-        let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+        let adapter = await selector.resolve(folder: folder)
         XCTAssertEqual(adapter.id, "gemini", "gemini 폴더가 Claude 로 잘못 라우팅되던 v0.9.6 회귀 가드")
     }
 
     func testClaudeFolderRoutesToClaudeAdapter() async {
         let selector = makeSelector(installedIDs: ["claude", "aider", "codex", "gemini"])
         let folder = makeFolder(adapterId: "claude")
-        let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+        let adapter = await selector.resolve(folder: folder)
         XCTAssertEqual(adapter.id, "claude")
     }
 
     func testAiderFolderRoutesToAiderAdapter() async {
         let selector = makeSelector(installedIDs: ["claude", "aider", "codex", "gemini"])
         let folder = makeFolder(adapterId: "aider")
-        let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+        let adapter = await selector.resolve(folder: folder)
         XCTAssertEqual(adapter.id, "aider")
     }
 
@@ -102,7 +102,7 @@ final class AdapterRouterTests: XCTestCase {
         // 미래에 "newvendor" 어댑터가 추가됐다고 가정
         let selector = makeSelector(installedIDs: ["claude", "codex", "newvendor"])
         let folder = makeFolder(adapterId: "newvendor")
-        let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+        let adapter = await selector.resolve(folder: folder)
         XCTAssertEqual(
             adapter.id, "newvendor",
             "selector candidates 에 등록된 새 어댑터가 자동 라우팅되어야 함 (allCandidateIDs 자동 반영)"
@@ -118,7 +118,7 @@ final class AdapterRouterTests: XCTestCase {
             fallback: StubAdapter(id: "fallback", installed: true)
         )
         let folder = makeFolder(adapterId: "codex")  // codex 미등록
-        let adapter = await AdapterRouter.resolve(folder: folder, selector: selector)
+        let adapter = await selector.resolve(folder: folder)
         XCTAssertEqual(adapter.id, "claude", "preferred 가 candidates 에 없으면 enabled 의 첫 설치된 어댑터로 폴백")
     }
 }

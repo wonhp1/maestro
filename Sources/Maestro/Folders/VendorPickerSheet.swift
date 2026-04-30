@@ -1,12 +1,14 @@
 import MaestroCore
 import SwiftUI
 
-/// 폴더 등록 직전, 어떤 어댑터(vendor) 를 사용할지 사용자에게 선택받는 시트.
-///
-/// ## UX 원칙
-/// - **친절** — 미설치 어댑터는 disabled + 설치 명령어 inline 표시.
-/// - **간결** — 라디오 + 설명 1-2 줄. 각 어댑터에 가장 중요한 정보 (설치 여부 + 버전) 만.
-/// - **빠른 결정** — 설치된 어댑터가 1개뿐이면 자동 선택, 사용자가 그냥 "추가" 누르면 됨.
+// 폴더 등록 직전, 어떤 어댑터(vendor) 를 사용할지 사용자에게 선택받는 시트.
+//
+// ## UX 원칙
+// - **친절** — 미설치 어댑터는 disabled + 설치 명령어 inline 표시.
+// - **간결** — 라디오 + 설명 1-2 줄.
+// - **빠른 결정** — 설치된 어댑터 1개뿐이면 자동 선택.
+//
+// (v0.9.0: codex/gemini auth banner 추가로 300 줄 초과 — 추후 ViewModel 분리.)
 // swiftlint:disable:next type_body_length
 struct VendorPickerSheet: View {
     let folderURL: URL

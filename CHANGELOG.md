@@ -3,6 +3,25 @@
 모든 사용자 가시 변경. 버전 형식 [SemVer](https://semver.org/spec/v2.0.0.html), 배포는
 GitHub Actions release workflow 자동화 (코드 서명 + 노타리 + DMG).
 
+## [0.11.1] — 2026-05-01
+
+배포 인프라 정비 — 앱 코드 변화 없음, GitHub Releases 공개 배포 활성화.
+
+### Added
+
+- **LICENSE** (MIT) — 정식 license 파일.
+- README install 섹션 — 다운로드 / Gatekeeper 우회 / 시스템 요구사항 / 자동
+  업데이트 안내.
+- `scripts/update-appcast.sh` — Sparkle EdDSA 서명 + appcast.xml 자동 갱신.
+- v0.9.0 ~ v0.11.1 의 11개 entry 가 docs/appcast.xml 에 backfill 됨.
+
+### Changed
+
+- `.github/workflows/release.yml`: 새 step 2개 — Sparkle appcast 자동 갱신 + main
+  브랜치에 commit/push (GitHub Pages 재배포). 이제 매 release 마다 자동 업데이트
+  사용자에게 도착.
+- Repo metadata: topics 10개, homepageUrl = latest release.
+
 ## [0.11.0] — 2026-05-01
 
 v0.10.0 final 리뷰 후속 — 사용자 가시 변경 없음, 코드 위생 / architecture

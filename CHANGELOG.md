@@ -3,6 +3,43 @@
 모든 사용자 가시 변경. 버전 형식 [SemVer](https://semver.org/spec/v2.0.0.html), 배포는
 GitHub Actions release workflow 자동화 (코드 서명 + 노타리 + DMG).
 
+## [0.11.0] — 2026-05-01
+
+v0.10.0 final 리뷰 후속 — 사용자 가시 변경 없음, 코드 위생 / architecture
+정리 위주. (i18n sweep 은 한국어 단일언어 환경에선 즉시 ROI 0 이라 글로벌
+출시 결정 시점으로 미룸.)
+
+### Added
+
+- **`VendorPickerAuthCoordinator`** (`Sources/MaestroCore/`) — VendorPickerSheet
+  의 인증/로그인 로직을 단위 테스트 가능 위치로 분리. `@MainActor @Observable`
+  public class. EnvironmentChecker / ExecutableLocating / AuthPasteboard 3개
+  의존성 주입.
+- `AuthPasteboard` protocol + `SystemPasteboard` 기본 구현 — 클립보드 추상화로
+  테스트에서 mock 가능.
+
+### Changed
+
+- `VendorPickerSheet`: 510 → 506줄. 인증 관련 모든 state/method 가 coordinator
+  로 이동. `@State authCoordinator = VendorPickerAuthCoordinator()`. file_length
+  swiftlint disable 제거.
+- `InteractiveAuthHelper.OAuthSetup`: non-Sendable 의도를 주석 + auto-derived
+  메커니즘으로 명시. Process/Pipe 가 non-Sendable 이므로 OAuthSetup 도 자동
+  non-Sendable — Task 경계 캡처 시 컴파일러가 차단.
+- `startLogin(for:)` 가 `@discardableResult Task<Void, Never>` 반환 — 테스트가
+  sleep/yield 의존 없이 deterministic await 가능.
+
+### Tests
+
+- 1059 → 1066 (+7):
+  - `VendorPickerAuthCoordinatorTests` 7개 — loadAuth, startLogin, cancel,
+    cleanup 슬롯 검증, 클립보드 추상화
+
+### Skipped (다음 사이클로)
+
+- **i18n sweep**: 한국어 단일언어 환경에서 사용자 가시 변화 0, 영어/일본어
+  확장 결정 시점에 일괄 처리가 효율적.
+
 ## [0.10.0] — 2026-05-01
 
 v0.9 사이클의 4-agent 코드 리뷰 후속 — 사용자 가시 변경 없음, 코드 위생 / 회귀

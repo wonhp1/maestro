@@ -36,6 +36,9 @@ jobs:
     env:
       HAS_SIGNING: ${{ secrets.MAESTRO_SIGN_P12_BASE64 != '' }}
       HAS_NOTARY: ${{ secrets.MAESTRO_NOTARY_APP_PASSWORD != '' }}
+      HAS_SPARKLE: ${{ secrets.MAESTRO_SPARKLE_PRIVATE_KEY != '' }}
+      MAESTRO_SPARKLE_PUBLIC_KEY: ${{ secrets.MAESTRO_SPARKLE_PUBLIC_KEY }}
+      MAESTRO_APPCAST_URL: https://wonhp1.github.io/maestro/appcast.xml
     steps:
       - uses: actions/checkout@v4
 
@@ -110,3 +113,35 @@ jobs:
         with:
           files: build/Maestro-*.dmg
           generate_release_notes: true
+
+      # v0.11.1: Sparkle appcast 자동 갱신 + GitHub Pages 배포.
+      - name: Update Sparkle appcast
+        if: env.HAS_SPARKLE == 'true' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          MAESTRO_SPARKLE_PRIVATE_KEY: ${{ secrets.MAESTRO_SPARKLE_PRIVATE_KEY }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          # tag 에서 버전 추출 (e.g. "v0.11.1" → "0.11.1")
+          VERSION="${GITHUB_REF##*/v}"
+          DMG=$(ls build/Maestro-*.dmg | head -1)
+          if [ -z "$DMG" ]; then
+            echo "❌ DMG 미발견" >&2
+            exit 1
+          fi
+          # Sparkle 도구 빌드 (sign_update 가 .build/artifacts 에 들어옴)
+          swift build --target Sparkle 2>&1 | tail -3 || true
+          ./scripts/update-appcast.sh "$VERSION" "$DMG"
+
+      - name: Commit appcast.xml + push
+        if: env.HAS_SPARKLE == 'true' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet docs/appcast.xml; then
+            echo "appcast.xml 변경 없음 — skip commit"
+            exit 0
+          fi
+          git add docs/appcast.xml
+          git commit -m "chore(release): appcast.xml v${GITHUB_REF##*/v}"
+          # tag commit 이라 detached HEAD — main 으로 push 해야 GitHub Pages 가 재배포
+          git push origin HEAD:main

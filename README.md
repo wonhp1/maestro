@@ -2,7 +2,7 @@
 
 > **AI 코딩 에이전트 공용 지휘소** — Claude / Codex / Gemini / Aider 같은 서로 다른 AI CLI 에이전트들을 한 팀으로 지휘하는 macOS 네이티브 앱.
 
-**Status**: ✅ v0.9.0 — Codex (OpenAI) + Gemini (Google) 어댑터 추가
+**Status**: ✅ v0.11.0 — 공개 베타 (GitHub Releases 배포)
 
 ## 🤖 지원 어댑터 (v0.9.0 기준)
 
@@ -49,27 +49,36 @@ Maestro는 그 위에 얹히는 **중립 지휘소**:
 
 ### 사용자 (설치해서 쓰고 싶으면)
 
-> 🚧 아직 릴리즈 전. v1.0 목표: 2026-09.
+**시스템 요구사항**: macOS 14 (Sonoma) 이상, Apple Silicon 또는 Intel.
 
-릴리즈 후:
+#### 1. 다운로드
 
-```bash
-# Homebrew Cask (예정)
-brew install --cask maestro
+[**최신 Release 페이지**](https://github.com/wonhp1/maestro/releases/latest) 에서
+`Maestro-X.Y.Z.dmg` 를 다운로드하세요.
 
-# 또는 직접 다운로드
-# https://github.com/<user>/maestro/releases
-```
+#### 2. 설치
 
-**사전 요구사항**: 참여시킬 에이전트 CLI를 사용자가 직접 설치해야 함.
+1. 다운로드한 DMG 파일 더블클릭 → 마운트
+2. **Maestro.app** 을 `Applications` 폴더로 드래그
+3. **첫 실행 시**: macOS 가 "확인되지 않은 개발자" 경고를 띄울 수 있어요.
+   해결: `Applications` 폴더에서 **우클릭 → 열기** (한 번만 하면 끝).
+   - 또는 시스템 설정 → 개인 정보 보호 및 보안 → "그래도 열기"
+   - Maestro 는 Apple Developer ID 로 코드 서명 + 노타리 됐지만, 일부
+     macOS 환경에서 첫 실행만 한 번 허락이 필요할 수 있습니다.
 
-```bash
-# 예: Claude
-brew install claude
+#### 3. 첫 실행 — 환경 설정
 
-# 예: Aider
-pip install aider-chat
-```
+Maestro 가 자동으로 필요한 CLI (Node, Claude / Codex / Gemini / Aider 중 원하는
+것) 를 검사하고, 없으면 **"환경 자동 설치"** 버튼 한 번으로 설치해줍니다.
+
+> **사용자 구독 활용**: ChatGPT Plus/Pro, Claude Pro/Max, Gemini AI Pro
+> 구독자는 본인 구독으로 OAuth 로그인하면 Maestro 안에서 GPT-5 / Claude / Gemini
+> 사용. API 키 별도 결제 불필요.
+
+#### 4. 자동 업데이트
+
+새 버전이 나오면 Maestro 메뉴 → **"Check for Updates…"** 로 받을 수 있어요
+(Sparkle 통합).
 
 ### 개발자 (이 프로젝트에 기여하려면)
 
@@ -116,7 +125,13 @@ swift test
 
 ## 📜 License
 
-MIT (예정)
+[MIT](./LICENSE) — 자유롭게 사용 / 수정 / 재배포. 책임 없음.
+
+## 🛟 지원
+
+- 🐛 버그 / 기능 요청 → [GitHub Issues](https://github.com/wonhp1/maestro/issues)
+- 🔒 보안 취약점 → [SECURITY.md](./SECURITY.md) 의 절차 따라 비공개 신고
+- 📋 [개인정보 처리방침](./PRIVACY.md) · [이용약관](./TERMS.md) · [Third-party Licenses](./LICENSES.md)
 
 ## 🙏 Credits
 
